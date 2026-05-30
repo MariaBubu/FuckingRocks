@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Fossil Tile Classifier</title>
+    <!-- Google Fonts: Plus Jakarta Sans, JetBrains Mono, Space Grotesk, Playball, and Satisfy -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@700;800&family=Playball&family=Satisfy&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="$stylesheet_url">
+  </head>
+  <body>
+    <!-- Floating background decorative blur blobs -->
+    <div class="decor-blob decor-blob-1"></div>
+    <div class="decor-blob decor-blob-2"></div>
+
+    <main class="shell">
+      <!-- Global Top Product Header Bar -->
+      <header class="app-header">
+        <div class="logo-wrap">
+          <span class="product-name">Fossils or Gum?</span>
+        </div>
+        <div class="header-actions">
+          <span class="status-badge">Local System</span>
+          
+          <!-- Sleek Computer Popover for Model Information -->
+          <div class="model-info-dropdown-container">
+            <button id="model-info-btn" class="header-icon-btn" aria-label="Show Model Information" type="button">
+              <svg class="monitor-icon" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                <line x1="8" y1="21" x2="16" y2="21"></line>
+                <line x1="12" y1="17" x2="12" y2="21"></line>
+              </svg>
+            </button>
+            
+            <div class="model-info-popover" id="model-info-popover">
+              <div class="popover-header">
+                <h3>Neural Network</h3>
+                <span id="model-status" class="model-status is-loading" aria-live="polite">$model_status_message</span>
+              </div>
+              <div class="popover-body">
+                <div class="info-row">
+                  <span class="info-label">Active Model:</span>
+                  <span class="info-value">$model_name</span>
+                </div>
+                <div class="info-row">
+                  <span class="info-label">Model File Path:</span>
+                  <code class="info-value-code" title="$model_path">$model_path</code>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <button id="theme-toggle" class="theme-toggle-btn" aria-label="Toggle light/dark theme" type="button">
+            <svg class="sun-icon" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+            <svg class="moon-icon" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+          </button>
+        </div>
+      </header>
+
+      <section class="workspace">
+        <!-- Left Panel: Uplod & Status -->
+        <div class="panel upload-panel">
+          <div class="title-row">
+            <p class="eyebrow">Limestone floor fossil classifier</p>
+            <h1>Coral or brachiopod?</h1>
+          </div>
+
+          <form id="upload-form" method="post" enctype="multipart/form-data" class="upload-form">
+            <label class="drop-zone" for="image" id="drop-zone-label">
+              <input id="image" name="image" type="file" accept="image/*" multiple required>
+              <div class="drop-icon-container">
+                <span class="drop-icon">+</span>
+              </div>
+              <span class="drop-title">Upload a fossil photo</span>
+              <span class="drop-copy">Drag & drop or click to browse</span>
+              <span class="drop-formats">JPG, PNG, TIFF, or HEIC</span>
+              <span id="file-feedback" class="file-feedback" aria-live="polite"></span>
+            </label>
+            <button id="classify-button" type="submit">Classify image</button>
+          </form>
+
+          $error_html
+        </div>
+
+        <!-- Right Panel: Results display -->
+        <div class="panel result-panel">
+          $result_html
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const imageInput = document.getElementById("image");
+      const fileFeedback = document.getElementById("file-feedback");
+      const uploadForm = document.getElementById("upload-form");
+      const classifyButton = document.getElementById("classify-button");
+      const modelStatus = document.getElementById("model-status");
+      const dropZone = document.getElementById("drop-zone-label");
+      const themeToggle = document.getElementById("theme-toggle");
+
+      // 1. Theme Management (Fully Customizable through CSS variables)
+      const getPreferredTheme = () => {
+        const stored = localStorage.getItem("theme");
+        if (stored) return stored;
+        return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+      };
+
+      const setTheme = (theme) => {
+        document.documentElement.setAttribute("data-theme", theme);
+        localStorage.setItem("theme", theme);
+      };
+
+      // Set initial theme
+      setTheme(getPreferredTheme());
+
+      themeToggle.addEventListener("click", () => {
+        const current = document.documentElement.getAttribute("data-theme");
+        setTheme(current === "light" ? "dark" : "light");
+      });
+
+      // 2. Model Status Preloading
+      const setModelStatus = (state, message) => {
+        modelStatus.textContent = message;
+        modelStatus.classList.remove("is-loading", "is-ready", "is-error");
+        modelStatus.classList.add(state === "ready" ? "is-ready" : state === "error" ? "is-error" : "is-loading");
+      };
+
+      const refreshModelStatus = async () => {
+        try {
+          const response = await fetch("/model-status", { cache: "no-store" });
+          const status = await response.json();
+          setModelStatus(status.state, status.message);
+          if (status.state !== "ready" && status.state !== "error") {
+            window.setTimeout(refreshModelStatus, 900);
+          }
+        } catch {
+          setModelStatus("error", "Status unavailable");
+        }
+      };
+
+      // 3. Dynamic Multi-Tab State and Rendering
+      let tabs = [];
+      let activeTabId = null;
+
+      const escapeHTML = (str) => {
+        if (!str) return "";
+        return str
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#039;");
+      };
+
+      const renderActiveTabContent = (tab) => {
+        if (!tab) return "";
+        if (tab.state === "loading") {
+          return `
+            <div class="tab-loading-state">
+              <div class="loader-spinner"></div>
+              <p>Analyzing specimen <strong>${escapeHTML(tab.name)}</strong>...</p>
+            </div>
+          `;
+        }
+        if (tab.state === "error") {
+          return `
+            <div class="tab-error-state">
+              <div class="error">${escapeHTML(tab.error || "Could not classify image.")}</div>
+              <p>Failed to analyze <strong>${escapeHTML(tab.name)}</strong>.</p>
+            </div>
+          `;
+        }
+
+        const result = tab.result;
+        const barsHtml = result.ranked.map(item => {
+          const confidence = item.confidence * 100;
+          const className = item.class_name;
+          return `
+            <div class="bar-row bar-row-${escapeHTML(className)}">
+              <div class="bar-label">
+                <span>${escapeHTML(item.display)}</span>
+                <span>${confidence.toFixed(1)}%</span>
+              </div>
+              <div class="bar-track">
+                <div class="bar-fill" style="width: ${confidence}%"></div>
+              </div>
+            </div>
+          `;
+        }).join("");
+
+        return `
+          <div class="result-grid">
+            <div class="preview-wrap">
+              <img src="${tab.image_url}" alt="Uploaded fossil photo">
+            </div>
+            <div class="prediction">
+              <div class="prediction-info">
+                <p class="eyebrow">Analysis Result</p>
+                <h2>${escapeHTML(result.label)}</h2>
+                <p class="description">${escapeHTML(result.description)}</p>
+              </div>
+              <div class="confidence-ring" title="Overall Model Confidence Score">
+                <span class="ring-value">${result.confidence_percent}%</span>
+                <span class="ring-label">Certainty</span>
+              </div>
+              <div class="bars">
+                <p class="bars-heading">Probability Breakdown</p>
+                ${barsHtml}
+              </div>
+            </div>
+          </div>
+        `;
+      };
+
+      const renderUI = () => {
+        const resultPanel = document.querySelector(".result-panel");
+        if (tabs.length === 0) {
+          resultPanel.innerHTML = `
+            <div class="empty-state">
+              <div class="sample-tile"></div>
+              <h2>Upload an image to classify it.</h2>
+              <p>The app will run the current best local model and return a coral or brachiopod prediction with confidence.</p>
+            </div>
+          `;
+          return;
+        }
+
+        const tabItemsHtml = tabs.map(tab => {
+          const isActive = tab.id === activeTabId ? "active" : "";
+          const isError = tab.state === "error" ? "is-error" : "";
+          const isLoading = tab.state === "loading" ? "is-loading" : "";
+          return `
+            <div class="tab-item ${isActive} ${isError} ${isLoading}" data-tab-id="${tab.id}">
+              <span class="tab-indicator-dot"></span>
+              <span class="tab-name" title="${escapeHTML(tab.name)}">${escapeHTML(tab.name)}</span>
+              <button class="tab-close-btn" type="button" aria-label="Close tab" data-close-id="${tab.id}">&times;</button>
+            </div>
+          `;
+        }).join("");
+
+        const activeTab = tabs.find(t => t.id === activeTabId) || tabs[0];
+        const contentHtml = renderActiveTabContent(activeTab);
+
+        resultPanel.innerHTML = `
+          <div class="tabs-container">
+            <div class="tab-bar">
+              ${tabItemsHtml}
+            </div>
+            <div class="tab-content">
+              ${contentHtml}
+            </div>
+          </div>
+        `;
+      };
+
+      // Event Delegation for tab item click and close X button clicks
+      document.querySelector(".result-panel").addEventListener("click", (e) => {
+        const closeBtn = e.target.closest(".tab-close-btn");
+        if (closeBtn) {
+          e.stopPropagation();
+          const targetId = Number(closeBtn.getAttribute("data-close-id"));
+          const tabIndex = tabs.findIndex(t => t.id === targetId);
+          if (tabIndex !== -1) {
+            tabs.splice(tabIndex, 1);
+            if (activeTabId === targetId) {
+              activeTabId = tabs.length > 0 ? tabs[tabs.length - 1].id : null;
+            }
+            renderUI();
+          }
+          return;
+        }
+
+        const tabItem = e.target.closest(".tab-item");
+        if (tabItem) {
+          const targetId = Number(tabItem.getAttribute("data-tab-id"));
+          activeTabId = targetId;
+          renderUI();
+        }
+      });
+
+      const handleFilesUpload = async (fileList) => {
+        if (!fileList || fileList.length === 0) return;
+
+        // Reset submit button state temporarily during queuing
+        const count = fileList.length;
+        classifyButton.textContent = count > 1 ? `Classifying ${count} images...` : "Classifying image...";
+        classifyButton.disabled = true;
+
+        for (let i = 0; i < fileList.length; i++) {
+          const file = fileList[i];
+          const tabId = Date.now() + Math.random();
+
+          tabs.push({
+            id: tabId,
+            name: file.name,
+            state: "loading"
+          });
+          activeTabId = tabId;
+          renderUI();
+
+          const formData = new FormData();
+          formData.append("image", file);
+
+          try {
+            const response = await fetch("/classify", {
+              method: "POST",
+              body: formData
+            });
+            const data = await response.json();
+
+            const currentTab = tabs.find(t => t.id === tabId);
+            if (currentTab) {
+              if (data.success) {
+                currentTab.state = "ready";
+                currentTab.result = data.result;
+                currentTab.image_url = data.image_url;
+              } else {
+                currentTab.state = "error";
+                currentTab.error = data.error || "Classification failed.";
+              }
+              renderUI();
+            }
+          } catch (err) {
+            const currentTab = tabs.find(t => t.id === tabId);
+            if (currentTab) {
+              currentTab.state = "error";
+              currentTab.error = "Connection error. Model failed to respond.";
+              renderUI();
+            }
+          }
+        }
+
+        classifyButton.textContent = "Classify image";
+        classifyButton.disabled = false;
+        imageInput.value = "";
+        fileFeedback.textContent = "";
+        fileFeedback.classList.remove("is-visible", "is-working");
+      };
+
+      const updateFeedback = (files) => {
+        if (!files || files.length === 0) {
+          fileFeedback.textContent = "";
+          fileFeedback.classList.remove("is-visible");
+          classifyButton.textContent = "Classify image";
+          return;
+        }
+        if (files.length === 1) {
+          fileFeedback.textContent = `${files[0].name}`;
+          classifyButton.textContent = "Classify image";
+        } else {
+          fileFeedback.textContent = `${files.length} images ready`;
+          classifyButton.textContent = "Classify images";
+        }
+        fileFeedback.classList.add("is-visible");
+      };
+
+      imageInput.addEventListener("change", () => {
+        updateFeedback(imageInput.files);
+      });
+
+      // Native Drag & Drop Handlers
+      ["dragenter", "dragover"].forEach(eventName => {
+        dropZone.addEventListener(eventName, (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          dropZone.classList.add("is-dragover");
+        }, false);
+      });
+
+      ["dragleave", "drop"].forEach(eventName => {
+        dropZone.addEventListener(eventName, (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          dropZone.classList.remove("is-dragover");
+        }, false);
+      });
+
+      dropZone.addEventListener("drop", (e) => {
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        if (files && files.length) {
+          imageInput.files = files;
+          updateFeedback(files);
+        }
+      });
+
+      uploadForm.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const files = imageInput.files;
+        handleFilesUpload(files);
+      });
+
+      // Model Information Dropdown Toggle
+      const modelInfoBtn = document.getElementById("model-info-btn");
+      const modelInfoPopover = document.getElementById("model-info-popover");
+
+      modelInfoBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        modelInfoPopover.classList.toggle("is-visible");
+      });
+
+      document.addEventListener("click", (e) => {
+        if (modelInfoPopover && !modelInfoPopover.contains(e.target) && !modelInfoBtn.contains(e.target)) {
+          modelInfoPopover.classList.remove("is-visible");
+        }
+      });
+
+      refreshModelStatus();
+    </script>
+  </body>
+</html>

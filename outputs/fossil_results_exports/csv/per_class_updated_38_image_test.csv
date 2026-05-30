@@ -1,0 +1,6 @@
+experiment,coral_correct,coral_total,coral_accuracy,shell_correct,shell_total,shell_accuracy,coral_as_shell,shell_as_coral
+Original only,21,25,0.84,12,13,0.9230769230769231,4,1
+Original + enhanced,23,25,0.92,11,13,0.8461538461538461,2,2
+Original + grayscale,25,25,1,7,13,0.5384615384615384,0,6
+Original + CLAHE,16,25,0.64,10,13,0.7692307692307693,9,3
+All variants,20,25,0.8,8,13,0.6153846153846154,5,5

@@ -374,9 +374,14 @@ def train_classifier(
         ]
     )
 
+    print(f"Loading dataset from {dataset_dir}", flush=True)
     base_dataset = datasets.ImageFolder(dataset_dir)
     if len(base_dataset.classes) < 2:
         raise RuntimeError("Need at least two class folders to train a classifier.")
+    print(
+        f"Found {len(base_dataset)} training images across classes {base_dataset.classes}",
+        flush=True,
+    )
 
     groups_by_class: dict[int, dict[str, list[int]]] = {}
     for index, (sample_path, class_index) in enumerate(base_dataset.samples):
@@ -423,16 +428,20 @@ def train_classifier(
     )
 
     if no_pretrained:
+        print("Creating ResNet18 without pretrained weights", flush=True)
         model = models.resnet18(weights=None)
     else:
         try:
+            print("Loading pretrained ResNet18 weights", flush=True)
             weights = models.ResNet18_Weights.DEFAULT
             model = models.resnet18(weights=weights)
+            print("Loaded pretrained ResNet18 weights", flush=True)
         except Exception as exc:
             print(
                 "Could not load pretrained ResNet18 weights. Falling back to random "
                 f"initialization. Original error: {exc}",
                 file=sys.stderr,
+                flush=True,
             )
             model = models.resnet18(weights=None)
 
@@ -507,7 +516,8 @@ def train_classifier(
         print(
             f"epoch {epoch:02d}/{epochs} "
             f"train_acc={train_accuracy:.3f} val_acc={val_accuracy:.3f} "
-            f"train_loss={row['train_loss']:.3f} val_loss={row['val_loss']:.3f}"
+            f"train_loss={row['train_loss']:.3f} val_loss={row['val_loss']:.3f}",
+            flush=True,
         )
 
         if val_accuracy > best_accuracy:

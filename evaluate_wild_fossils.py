@@ -21,10 +21,7 @@ import csv
 import json
 from pathlib import Path
 
-import torch
 from PIL import Image, ImageEnhance, ImageOps
-from torch import nn
-from torchvision import models, transforms
 
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tif", ".tiff"}
@@ -46,6 +43,12 @@ def parse_args() -> argparse.Namespace:
         choices=["original", "enhanced"],
         default=["original", "enhanced"],
         help="Evaluate original images, enhanced duplicates, or both.",
+    )
+    parser.add_argument(
+        "--device",
+        choices=["cpu", "mps", "cuda", "auto"],
+        default="cpu",
+        help="Device for inference. CPU is the default because it is stable and fast enough.",
     )
     return parser.parse_args()
 
@@ -94,7 +97,11 @@ def discover_wild_images(source: Path) -> list[tuple[Path, str]]:
     return items
 
 
-def load_model(model_path: Path, device: torch.device):
+def load_model(model_path: Path, device):
+    import torch
+    from torch import nn
+    from torchvision import models
+
     checkpoint = torch.load(model_path, map_location=device)
     classes = checkpoint["classes"]
 
@@ -106,20 +113,31 @@ def load_model(model_path: Path, device: torch.device):
     return model, classes
 
 
-def main() -> None:
-    args = parse_args()
-    source = resolve(args.source)
-    model_path = resolve(args.model)
-    output = resolve(args.output)
+def evaluate_wild(
+    source: Path,
+    model_path: Path,
+    output: Path,
+    variants: list[str],
+    device_name: str = "cpu",
+) -> dict:
+    print("Importing PyTorch for wild evaluation...", flush=True)
+    import torch
+    from torchvision import transforms
+
     output.mkdir(parents=True, exist_ok=True)
 
-    device = torch.device(
-        "mps"
-        if torch.backends.mps.is_available()
-        else "cuda"
-        if torch.cuda.is_available()
-        else "cpu"
-    )
+    if device_name == "auto":
+        resolved_device = (
+            "mps"
+            if torch.backends.mps.is_available()
+            else "cuda"
+            if torch.cuda.is_available()
+            else "cpu"
+        )
+    else:
+        resolved_device = device_name
+    device = torch.device(resolved_device)
+    print(f"Using device: {device}", flush=True)
 
     model, classes = load_model(model_path, device)
     class_to_idx = {class_name: index for index, class_name in enumerate(classes)}
@@ -149,7 +167,7 @@ def main() -> None:
                 )
 
             image = Image.open(image_path).convert("RGB")
-            for variant_name in args.variants:
+            for variant_name in variants:
                 variant = VARIANTS[variant_name](image)
                 tensor = transform(variant).unsqueeze(0).to(device)
                 probabilities = torch.softmax(model(tensor), dim=1).squeeze(0).cpu()
@@ -204,7 +222,7 @@ def main() -> None:
         "correct": correct,
         "accuracy": accuracy,
         "confusion_matrix": confusion,
-        "variants": args.variants,
+        "variants": variants,
         "source": str(source),
         "model": str(model_path),
     }
@@ -219,6 +237,18 @@ def main() -> None:
     print(f"Accuracy: {accuracy:.3f}")
     print(f"Predictions: {predictions_path}")
     print(f"Summary: {summary_path}")
+    return summary
+
+
+def main() -> None:
+    args = parse_args()
+    evaluate_wild(
+        source=resolve(args.source),
+        model_path=resolve(args.model),
+        output=resolve(args.output),
+        variants=args.variants,
+        device_name=args.device,
+    )
 
 
 if __name__ == "__main__":

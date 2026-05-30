@@ -89,6 +89,41 @@
           $result_html
         </div>
       </section>
+
+      <!-- Section Divider line -->
+      <hr class="section-divider">
+
+      <!-- AI Fossil Finder Detector Workspace -->
+      <section class="workspace detector-workspace" id="detector-workspace">
+        <div class="panel upload-panel">
+          <div class="title-row">
+            <p class="eyebrow">AI Bounding Box Finder & Classifier (Method B)</p>
+            <h1>Scan slab for fossils</h1>
+          </div>
+
+          <form id="detect-form" class="upload-form">
+            <label class="drop-zone" for="detect-image" id="detect-drop-zone-label">
+              <input id="detect-image" name="image" type="file" accept="image/*" required>
+              <div class="drop-icon-container">
+                <span class="drop-icon">🔍</span>
+              </div>
+              <span class="drop-title">Upload a large slab photo</span>
+              <span class="drop-copy">Drag & drop or click to browse</span>
+              <span class="drop-formats">JPG, PNG, TIFF, or HEIC</span>
+              <span id="detect-file-feedback" class="file-feedback" aria-live="polite"></span>
+            </label>
+            <button id="detect-button" type="submit">Scan Image for Fossils</button>
+          </form>
+        </div>
+
+        <div class="panel result-panel" id="detect-result-panel">
+          <div class="empty-state">
+            <div class="sample-tile detector-sample-tile"></div>
+            <h2>Detect & classify fossils in a large image.</h2>
+            <p>The zero-shot AI will scan the entire surface, locate the fossil, draw a bounding box around it, crop it, and then predict whether it is coral or brachiopod.</p>
+          </div>
+        </div>
+      </section>
     </main>
 
     <script>
@@ -404,6 +439,175 @@
       document.addEventListener("click", (e) => {
         if (modelInfoPopover && !modelInfoPopover.contains(e.target) && !modelInfoBtn.contains(e.target)) {
           modelInfoPopover.classList.remove("is-visible");
+        }
+      });
+
+      // 4. Method B Zero-Shot Detection Logic
+      const detectImage = document.getElementById("detect-image");
+      const detectFileFeedback = document.getElementById("detect-file-feedback");
+      const detectForm = document.getElementById("detect-form");
+      const detectButton = document.getElementById("detect-button");
+      const detectDropZone = document.getElementById("detect-drop-zone-label");
+      const detectResultPanel = document.getElementById("detect-result-panel");
+
+      const updateDetectFeedback = (files) => {
+        if (!files || files.length === 0) {
+          detectFileFeedback.textContent = "";
+          detectFileFeedback.classList.remove("is-visible");
+          detectButton.textContent = "Scan Image for Fossils";
+          return;
+        }
+        detectFileFeedback.textContent = `${files[0].name}`;
+        detectFileFeedback.classList.add("is-visible");
+        detectButton.textContent = "Scan Image for Fossils";
+      };
+
+      detectImage.addEventListener("change", () => {
+        updateDetectFeedback(detectImage.files);
+      });
+
+      // Drag and drop for detection
+      ["dragenter", "dragover"].forEach(eventName => {
+        detectDropZone.addEventListener(eventName, (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          detectDropZone.classList.add("is-dragover");
+        }, false);
+      });
+
+      ["dragleave", "drop"].forEach(eventName => {
+        detectDropZone.addEventListener(eventName, (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          detectDropZone.classList.remove("is-dragover");
+        }, false);
+      });
+
+      detectDropZone.addEventListener("drop", (e) => {
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        if (files && files.length) {
+          detectImage.files = files;
+          updateDetectFeedback(files);
+        }
+      });
+
+      detectForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const files = detectImage.files;
+        if (!files || files.length === 0) return;
+
+        detectButton.textContent = "Analyzing Slab Surface...";
+        detectButton.disabled = true;
+
+        // Display loading state on results panel
+        detectResultPanel.innerHTML = `
+          <div class="tab-loading-state">
+            <div class="loader-spinner"></div>
+            <p>Scanning photo for fossils with zero-shot AI detector...</p>
+            <p style="font-size: var(--fs-xs); color: var(--color-text-muted); max-width: 320px; margin: 0 auto; line-height: 1.5;">
+              (Note: The first scan will download the 300MB pre-trained model to your local CPU cache if it hasn't fully loaded yet.)
+            </p>
+          </div>
+        `;
+
+        const formData = new FormData();
+        formData.append("image", files[0]);
+
+        try {
+          const response = await fetch("/detect", {
+            method: "POST",
+            body: formData
+          });
+          const data = await response.json();
+
+          if (data.success) {
+            const classif = data.classification;
+            const barsHtml = classif.ranked.map(item => {
+              const confidence = item.confidence * 100;
+              const className = item.class_name;
+              return `
+                <div class="bar-row bar-row-${escapeHTML(className)}">
+                  <div class="bar-label">
+                    <span>${escapeHTML(item.display)}</span>
+                    <span>${confidence.toFixed(1)}%</span>
+                  </div>
+                  <div class="bar-track">
+                    <div class="bar-fill" style="width: ${confidence}%"></div>
+                  </div>
+                </div>
+              `;
+            }).join("");
+
+            detectResultPanel.innerHTML = `
+              <div class="detection-result-container">
+                <div class="detection-header-summary">
+                  <div class="badge-row">
+                    <span class="status-badge" style="background: rgba(var(--color-primary-rgb), 0.08);">
+                      Zero-Shot Score: ${(data.score * 100).toFixed(0)}%
+                    </span>
+                  </div>
+                  <h2>Fossil Isolated Successfully!</h2>
+                  <p class="description">The AI scanned the image, isolated a specimen at coordinates <code>[${data.bbox.join(", ")}]</code>, and cropped it for classification.</p>
+                </div>
+                
+                <div class="detection-display-grid">
+                  <!-- Isolated Specimen Crop & Classification -->
+                  <div class="specimen-analysis-card">
+                    <p class="eyebrow" style="margin-bottom: 12px;">Isolated Specimen Crop</p>
+                    <div class="cropped-preview-wrap">
+                      <img src="${data.cropped_image_url}" alt="Isolated fossil specimen crop">
+                    </div>
+                    <div class="prediction" style="margin-top: 16px; border-left: none; padding: 20px; grid-template-columns: 1fr;">
+                      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                        <div class="prediction-info">
+                          <p class="eyebrow">Specimen Classification</p>
+                          <h3 style="font-size: var(--fs-xl); font-weight: var(--fw-bold); color: var(--color-text-title);">${escapeHTML(classif.label)}</h3>
+                        </div>
+                        <div class="confidence-ring" style="width: 70px; height: 70px;" title="Overall Model Confidence Score">
+                          <span class="ring-value" style="font-size: var(--fs-base);">${classif.confidence_percent}%</span>
+                          <span class="ring-label" style="font-size: 6px;">Certainty</span>
+                        </div>
+                      </div>
+                      <p class="description" style="font-size: var(--fs-xs); line-height: 1.5; margin-bottom: 16px;">${escapeHTML(classif.description)}</p>
+                      <div class="bars" style="margin-top: 0; padding-top: 14px;">
+                        <p class="bars-heading" style="font-size: 10px;">Probability Breakdown</p>
+                        ${barsHtml}
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Full Slab Overview with Bounding Box -->
+                  <div class="slab-overview-card">
+                    <p class="eyebrow" style="margin-bottom: 12px;">Full Slab Bounding Box</p>
+                    <div class="annotated-preview-wrap">
+                      <img src="${data.annotated_image_url}" alt="Full slab image with bounding box annotation">
+                    </div>
+                  </div>
+                </div>
+              </div>
+            `;
+          } else {
+            detectResultPanel.innerHTML = `
+              <div class="tab-error-state">
+                <div class="error">${escapeHTML(data.error || "Zero-shot detection failed.")}</div>
+                <p>Could not isolate any fossils in this image. Please try again with a clearer picture.</p>
+              </div>
+            `;
+          }
+        } catch (err) {
+          detectResultPanel.innerHTML = `
+            <div class="tab-error-state">
+              <div class="error">Connection error. Zero-shot model failed to respond.</div>
+              <p>Please check your server logs.</p>
+            </div>
+          `;
+        } finally {
+          detectButton.textContent = "Scan Image for Fossils";
+          detectButton.disabled = false;
+          detectImage.value = "";
+          detectFileFeedback.textContent = "";
+          detectFileFeedback.classList.remove("is-visible");
         }
       });
 

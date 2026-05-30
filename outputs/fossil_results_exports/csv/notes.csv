@@ -1,6 +1,0 @@
-Term,Meaning
-Initial wild test,"The earlier 10-image test set. Some exploratory tests evaluated original+enhanced variants, giving 20 evaluated samples."
-Updated wild test,The current 38-image test set: 25 coral images and 13 shell images.
-Original + enhanced,Training set contains both the original converted JPEG and an enhanced JPEG version of each training photo.
-Grayscale / CLAHE,Saved preprocessing variants used for experiment comparison; updated results suggest they do not currently improve generalization.
-Validation accuracy,"Internal validation scores were often perfect, so the external wild test is more meaningful for choosing a model."

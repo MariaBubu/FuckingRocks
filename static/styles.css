@@ -1275,3 +1275,111 @@ h2 {
   border-radius: var(--radius-full);
   animation: spin 900ms linear infinite;
 }
+
+/* ==========================================================================
+   AI DETECTOR SECTION STYLES (METHOD B)
+   ========================================================================== */
+html {
+  scroll-behavior: smooth;
+}
+
+.section-divider {
+  border: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--color-panel-border), transparent);
+  margin: 60px 0 40px 0;
+  opacity: 0.8;
+}
+
+.detector-workspace {
+  margin-top: 10px;
+  padding-bottom: 60px;
+}
+
+.detector-sample-tile {
+  background: 
+    radial-gradient(ellipse at center, rgba(var(--color-primary-rgb), 0.05) 0%, transparent 70%),
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.012) 0 2px, transparent 2px 20px),
+    linear-gradient(135deg, rgba(var(--color-primary-rgb), 0.04) 0%, rgba(var(--color-secondary-rgb), 0.04) 100%);
+  border: 2px dashed rgba(var(--color-primary-rgb), 0.35) !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.detector-sample-tile::before {
+  content: "🔍";
+  font-size: 48px;
+  filter: drop-shadow(0 0 10px rgba(var(--color-primary-rgb), 0.4));
+  animation: scan-pulse 2s infinite alternate ease-in-out;
+}
+
+@keyframes scan-pulse {
+  0% { transform: scale(0.85) rotate(-5deg); opacity: 0.5; }
+  100% { transform: scale(1.05) rotate(5deg); opacity: 1; }
+}
+
+/* Bounding box result layout */
+.detection-result-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  gap: 24px;
+  text-align: left;
+}
+
+.detection-header-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.badge-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.detection-display-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+
+@media (max-width: 900px) {
+  .detection-display-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.specimen-analysis-card,
+.slab-overview-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.cropped-preview-wrap,
+.annotated-preview-wrap {
+  background-color: rgba(0, 0, 0, 0.2);
+  border-radius: var(--radius-md);
+  border: 2px solid var(--color-panel-border);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1.5;
+  width: 100%;
+}
+
+.cropped-preview-wrap img,
+.annotated-preview-wrap img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  transition: transform var(--transition-slow);
+}
+
+.cropped-preview-wrap:hover img,
+.annotated-preview-wrap:hover img {
+  transform: scale(1.02);
+}

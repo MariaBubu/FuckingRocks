@@ -40,6 +40,11 @@ MODEL_STATE = "idle"
 MODEL_ERROR = ""
 MODEL_LOCK = threading.Lock()
 
+DETECTOR = None
+DETECTOR_STATE = "idle"
+DETECTOR_ERROR = ""
+DETECTOR_LOCK = threading.Lock()
+
 
 def load_model_once():
     global MODEL, CLASSES, MODEL_STATE, MODEL_ERROR
@@ -138,6 +143,94 @@ def classify_image(image: Image.Image) -> dict:
         "description": display["description"],
         "confidence_percent": round(top["confidence"] * 100, 1),
         "ranked": ranked,
+    }
+
+
+def load_detector_once():
+    global DETECTOR, DETECTOR_STATE, DETECTOR_ERROR
+    if DETECTOR is not None:
+        return DETECTOR
+
+    with DETECTOR_LOCK:
+        if DETECTOR is not None:
+            return DETECTOR
+
+        DETECTOR_STATE = "loading"
+        DETECTOR_ERROR = ""
+        try:
+            from transformers import pipeline
+            # Load OWL-ViT zero-shot object detector
+            detector = pipeline("zero-shot-object-detection", model="google/owlvit-base-patch32")
+            DETECTOR = detector
+            DETECTOR_STATE = "ready"
+        except Exception as exc:
+            DETECTOR_STATE = "error"
+            DETECTOR_ERROR = str(exc)
+            raise
+    return DETECTOR
+
+
+def detect_and_classify_fossil(image: Image.Image) -> dict:
+    from PIL import ImageDraw
+    
+    # Ensure detector is loaded
+    try:
+        detector = load_detector_once()
+    except Exception as exc:
+        return {"success": False, "error": f"Failed to load zero-shot detector model: {exc}"}
+    
+    # Run the detector
+    try:
+        detections = detector(
+            image,
+            candidate_labels=["fossil", "limestone fossil", "coral fossil", "shell fossil"],
+            threshold=0.08
+        )
+    except Exception as exc:
+        return {"success": False, "error": f"Detector execution failed: {exc}"}
+    
+    if not detections:
+        return {"success": False, "error": "No fossils detected in this photo. Try adjusting exposure or lighting."}
+        
+    # Sort by score descending to get the best candidate
+    detections = sorted(detections, key=lambda d: d["score"], reverse=True)
+    best = detections[0]
+    box = best["box"]
+    
+    # Bounding box coordinates
+    xmin = max(0, int(box["xmin"]))
+    ymin = max(0, int(box["ymin"]))
+    xmax = min(image.width, int(box["xmax"]))
+    ymax = min(image.height, int(box["ymax"]))
+    
+    # Crop the candidate region
+    cropped = image.crop((xmin, ymin, xmax, ymax))
+    
+    # Run classification on the cropped candidate!
+    classification = classify_image(cropped)
+    
+    # Draw a beautiful glowing outline box on a copy of the original image
+    annotated = image.copy()
+    draw = ImageDraw.Draw(annotated)
+    
+    # Draw 4px outline border
+    is_coral = "Coral" in classification["label"]
+    color = "#22c55e" if is_coral else "#f97316"
+    
+    for offset in range(4):
+        draw.rectangle(
+            [xmin - offset, ymin - offset, xmax + offset, ymax + offset],
+            outline=color
+        )
+    
+    return {
+        "success": True,
+        "score": float(best["score"]),
+        "label": best["label"],
+        "bbox": [xmin, ymin, xmax, ymax],
+        "classification": classification,
+        "annotated_image_url": preview_data_url(annotated),
+        "cropped_image_url": preview_data_url(cropped)
     }
 
 
@@ -260,6 +353,33 @@ class FossilHandler(BaseHTTPRequestHandler):
                 self.send_json({"success": False, "error": str(exc)})
             return
 
+        if self.path == "/detect":
+            if int(self.headers.get("Content-Length", "0")) > MAX_UPLOAD_BYTES:
+                self.send_json({"error": "That image is too large. Limit is 20 MB."})
+                return
+
+            try:
+                form = cgi.FieldStorage(
+                    fp=self.rfile,
+                    headers=self.headers,
+                    environ={
+                        "REQUEST_METHOD": "POST",
+                        "CONTENT_TYPE": self.headers.get("Content-Type", ""),
+                    },
+                )
+                field = form["image"] if "image" in form else None
+                if field is None or not getattr(field, "filename", ""):
+                    self.send_json({"error": "Please select an image file."})
+                    return
+
+                image_bytes = field.file.read()
+                image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+                result = detect_and_classify_fossil(image)
+                self.send_json(result)
+            except Exception as exc:
+                self.send_json({"success": False, "error": str(exc)})
+            return
+
         # 2. Original fallback form action
         if self.path != "/":
             self.send_error(404)
@@ -329,6 +449,17 @@ def main():
     print("Model is warming up in the background.", flush=True)
     print("Press Ctrl+C to stop.", flush=True)
     preload_model_background()
+    
+    # Asynchronously preload the zero-shot detector model
+    def preload_detector():
+        try:
+            print("Zero-shot detector model is warming up in the background...", flush=True)
+            load_detector_once()
+            print("Zero-shot detector model loaded and ready.", flush=True)
+        except Exception as exc:
+            print(f"Zero-shot detector model preload failed: {exc}", flush=True)
+            
+    threading.Thread(target=preload_detector, daemon=True).start()
     server.serve_forever()
 
 

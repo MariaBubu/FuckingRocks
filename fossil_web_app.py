@@ -40,7 +40,10 @@ MODEL_DIR = ROOT / "data/preprocessing_experiments/original_enhanced/model"
 MODEL_PATH = MODEL_DIR / "best_resnet18.pt"
 ONNX_PATH = MODEL_DIR / "best_resnet18.onnx"
 CLASSES_PATH = MODEL_DIR / "classes.json"
-YOLO_BOX_MODEL_PATH = ROOT / "runs/detect/outputs/box_training/yolo11n_fossil_first_run/weights/best.pt"
+YOLO_BOX_MODEL_PATH = (
+    ROOT
+    / "runs/detect/outputs/box_training/yolo11n_fossil_first_run/weights/best.pt"
+)
 PORT = 5050
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 
@@ -157,6 +160,19 @@ def preload_model_background():
             load_model_once()
         except Exception as exc:
             print(f"  ⚠ Background model preload failed: {exc}", flush=True)
+
+    threading.Thread(target=preload, daemon=True).start()
+
+
+def preload_yolo_background():
+    if not YOLO_BOX_MODEL_PATH.exists():
+        return
+
+    def preload():
+        try:
+            load_yolo_once()
+        except Exception as exc:
+            print(f"  ⚠ Background YOLO preload failed: {exc}", flush=True)
 
     threading.Thread(target=preload, daemon=True).start()
 
@@ -293,14 +309,39 @@ def load_yolo_once():
             raise
 
 
-def detect_and_classify_multiple_fossils(image: Image.Image) -> dict:
-    from PIL import ImageDraw
+def intersection_area(box_a: list[int], box_b: list[int]) -> int:
+    x1 = max(box_a[0], box_b[0])
+    y1 = max(box_a[1], box_b[1])
+    x2 = min(box_a[2], box_b[2])
+    y2 = min(box_a[3], box_b[3])
+    return max(0, x2 - x1) * max(0, y2 - y1)
 
+
+def remove_nested_detections(detections: list[dict], containment_threshold: float = 0.85) -> list[dict]:
+    kept: list[dict] = []
+    for detection in sorted(detections, key=lambda item: (item["area"], item["score"]), reverse=True):
+        nested = False
+        for larger in kept:
+            if larger["area"] <= detection["area"]:
+                continue
+            overlap = intersection_area(detection["bbox"], larger["bbox"])
+            if detection["area"] and overlap / detection["area"] >= containment_threshold:
+                nested = True
+                break
+        if not nested:
+            kept.append(detection)
+    return sorted(kept, key=lambda item: item["score"], reverse=True)
+
+
+def detect_and_classify_multiple_fossils(image: Image.Image, confidence: float = 0.25) -> dict:
+    from PIL import ImageDraw, ImageFont
+
+    confidence = max(0.01, min(0.95, confidence))
     yolo_model = load_yolo_once()
     yolo_results = yolo_model.predict(
         source=image.convert("RGB"),
         imgsz=640,
-        conf=0.25,
+        conf=confidence,
         iou=0.45,
         max_det=40,
         verbose=False,
@@ -308,7 +349,14 @@ def detect_and_classify_multiple_fossils(image: Image.Image) -> dict:
     )
     boxes = yolo_results[0].boxes
     if boxes is None or len(boxes) == 0:
-        return {"success": False, "error": "The trained box model did not detect fossils above the confidence threshold."}
+        return {
+            "success": True,
+            "no_detections": True,
+            "confidence_threshold": confidence,
+            "message": f"No fossil boxes found above the {confidence:.2f} confidence threshold.",
+            "fossils": [],
+            "annotated_image_url": preview_data_url(image),
+        }
 
     detections = []
     for box in boxes:
@@ -321,10 +369,19 @@ def detect_and_classify_multiple_fossils(image: Image.Image) -> dict:
         area = (xmax - xmin) * (ymax - ymin)
         detections.append({"bbox": [xmin, ymin, xmax, ymax], "score": score, "area": area})
 
-    detections = sorted(detections, key=lambda item: item["score"], reverse=True)[:24]
+    detections = remove_nested_detections(detections)[:24]
 
     annotated = image.copy()
     draw = ImageDraw.Draw(annotated)
+    line_width = max(7, round(min(image.width, image.height) / 95))
+    font_size = max(24, round(min(image.width, image.height) / 32))
+    try:
+        label_font = ImageFont.truetype("/System/Library/Fonts/Supplemental/Arial Bold.ttf", font_size)
+    except Exception:
+        try:
+            label_font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", font_size)
+        except Exception:
+            label_font = ImageFont.load_default()
 
     fossils_list = []
     for index, det in enumerate(detections):
@@ -333,17 +390,33 @@ def detect_and_classify_multiple_fossils(image: Image.Image) -> dict:
         xmin, ymin, xmax, ymax = box
 
         cropped = image.crop((xmin, ymin, xmax, ymax))
-        color = "#22c55e"
+        color = "#00ff5a"
+        shadow_color = "#001b0b"
 
-        for offset in range(4):
+        for offset in range(line_width + 2, line_width + 6):
+            draw.rectangle(
+                [xmin - offset, ymin - offset, xmax + offset, ymax + offset],
+                outline=shadow_color
+            )
+        for offset in range(line_width):
             draw.rectangle(
                 [xmin - offset, ymin - offset, xmax + offset, ymax + offset],
                 outline=color
             )
 
         try:
-            draw.rectangle([xmin, max(0, ymin - 20), min(image.width, xmin + 128), ymin], fill=color)
-            draw.text((xmin + 4, max(0, ymin - 18)), f"Fossil {fossil_id} {det['score']:.2f}", fill="white")
+            label = f"Fossil {fossil_id}  {det['score']:.2f}"
+            label_bbox = draw.textbbox((0, 0), label, font=label_font)
+            label_width = label_bbox[2] - label_bbox[0]
+            label_height = label_bbox[3] - label_bbox[1]
+            pad_x = max(8, line_width)
+            pad_y = max(5, line_width // 2)
+            label_x1 = xmin
+            label_y1 = max(0, ymin - label_height - (pad_y * 2) - line_width)
+            label_x2 = min(image.width, label_x1 + label_width + (pad_x * 2))
+            label_y2 = min(image.height, label_y1 + label_height + (pad_y * 2))
+            draw.rectangle([label_x1, label_y1, label_x2, label_y2], fill=color)
+            draw.text((label_x1 + pad_x, label_y1 + pad_y), label, fill="#001b0b", font=label_font)
         except Exception:
             pass
 
@@ -356,6 +429,7 @@ def detect_and_classify_multiple_fossils(image: Image.Image) -> dict:
 
     return {
         "success": True,
+        "confidence_threshold": confidence,
         "fossils": fossils_list,
         "annotated_image_url": preview_data_url(annotated)
     }
@@ -434,11 +508,11 @@ def render_result(result: dict, image_url: str) -> str:
     """
 
 
-def _parse_multipart(handler):
+def _parse_multipart_form(handler):
     """Parse multipart form data without the deprecated cgi module."""
     content_type = handler.headers.get("Content-Type", "")
     if "boundary=" not in content_type:
-        return None, None
+        return {}, {}
 
     boundary = content_type.split("boundary=")[1].strip()
     if boundary.startswith('"') and boundary.endswith('"'):
@@ -449,6 +523,8 @@ def _parse_multipart(handler):
 
     boundary_bytes = boundary.encode("utf-8")
     parts = body.split(b"--" + boundary_bytes)
+    files = {}
+    fields = {}
 
     for part in parts:
         if b"Content-Disposition" not in part:
@@ -461,13 +537,21 @@ def _parse_multipart(handler):
         if content.endswith(b"\r\n"):
             content = content[:-2]
 
-        if 'name="image"' in headers_section:
-            filename = ""
-            if 'filename="' in headers_section:
-                filename = headers_section.split('filename="')[1].split('"')[0]
-            return content, filename
+        if 'name="' not in headers_section:
+            continue
+        field_name = headers_section.split('name="')[1].split('"')[0]
+        if 'filename="' in headers_section:
+            filename = headers_section.split('filename="')[1].split('"')[0]
+            files[field_name] = (content, filename)
+        else:
+            fields[field_name] = content.decode("utf-8", errors="replace")
 
-    return None, None
+    return files, fields
+
+
+def _parse_multipart(handler):
+    files, _fields = _parse_multipart_form(handler)
+    return files.get("image", (None, None))
 
 
 class FossilHandler(BaseHTTPRequestHandler):
@@ -490,14 +574,19 @@ class FossilHandler(BaseHTTPRequestHandler):
                 self.send_json({"error": "That image is too large. Limit is 20 MB."})
                 return
             try:
-                image_bytes, filename = _parse_multipart(self)
+                files, fields = _parse_multipart_form(self)
+                image_bytes, filename = files.get("image", (None, None))
                 if image_bytes is None or not filename:
                     self.send_json({"error": "Please select an image file."})
                     return
+                try:
+                    confidence = float(fields.get("confidence", "0.25"))
+                except ValueError:
+                    confidence = 0.25
                 from PIL import Image
 
                 image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-                result = detect_and_classify_multiple_fossils(image)
+                result = detect_and_classify_multiple_fossils(image, confidence=confidence)
                 self.send_json(result)
             except Exception as exc:
                 self.send_json({"success": False, "error": str(exc)})
@@ -595,10 +684,11 @@ def main():
 
     server = ThreadingHTTPServer(("127.0.0.1", PORT), FossilHandler)
     print(f"✅ Server is live at http://127.0.0.1:{PORT}/", flush=True)
-    print("   Model is warming in the background; page stays usable.", flush=True)
+    print("   Models are warming in the background; page stays usable.", flush=True)
     print(f"   Press Ctrl+C to stop.", flush=True)
     print("=" * 60, flush=True)
     preload_model_background()
+    preload_yolo_background()
     server.serve_forever()
 
 

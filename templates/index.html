@@ -125,13 +125,26 @@
 
           <form id="detect-form" method="post" enctype="multipart/form-data" class="upload-form tool-form">
             <label class="drop-zone" for="detect-image" id="detect-drop-zone-label">
-              <input id="detect-image" name="image" type="file" accept="image/*" required>
+              <input id="detect-image" name="image" type="file" accept="image/*" multiple required>
               <div class="drop-icon-container"><span class="drop-icon">□</span></div>
               <span class="drop-title">Upload slab photo</span>
               <span class="drop-copy">The YOLO model will draw fossil boxes</span>
               <span class="drop-formats">JPG, PNG, TIFF, or HEIC</span>
               <span id="detect-file-feedback" class="file-feedback" aria-live="polite"></span>
             </label>
+            <div class="confidence-control">
+              <div class="confidence-control-top">
+                <label for="confidence-slider">Box sensitivity</label>
+                <output id="confidence-value" for="confidence-slider">25%</output>
+              </div>
+              <input id="confidence-slider" name="confidence" type="range" min="0.05" max="0.50" step="0.05" value="0.25">
+              <div class="confidence-presets" aria-label="Confidence threshold presets">
+                <button type="button" data-confidence="0.10">desperate</button>
+                <button type="button" data-confidence="0.15">sensitive</button>
+                <button type="button" data-confidence="0.25" class="is-active">normal</button>
+                <button type="button" data-confidence="0.35">strict</button>
+              </div>
+            </div>
             <button id="detect-button" type="submit">Box fossils</button>
           </form>
 
@@ -160,6 +173,10 @@
       const detectButton = document.getElementById("detect-button");
       const fileFeedback = document.getElementById("file-feedback");
       const detectFileFeedback = document.getElementById("detect-file-feedback");
+      const confidenceSlider = document.getElementById("confidence-slider");
+      const confidenceValue = document.getElementById("confidence-value");
+      let tabs = [];
+      let activeTabId = null;
 
       const setTheme = (theme) => {
         document.documentElement.setAttribute("data-theme", theme);
@@ -191,6 +208,22 @@
       };
       refreshModelStatus();
 
+      const confidencePercent = () => `${Math.round(Number(confidenceSlider.value) * 100)}%`;
+      const updateConfidenceUI = () => {
+        confidenceValue.textContent = confidencePercent();
+        document.querySelectorAll("[data-confidence]").forEach((button) => {
+          button.classList.toggle("is-active", button.dataset.confidence === confidenceSlider.value);
+        });
+      };
+      confidenceSlider.addEventListener("input", updateConfidenceUI);
+      document.querySelectorAll("[data-confidence]").forEach((button) => {
+        button.addEventListener("click", () => {
+          confidenceSlider.value = button.dataset.confidence;
+          updateConfidenceUI();
+        });
+      });
+      updateConfidenceUI();
+
       const updateFeedback = (input, feedback, button, baseText) => {
         const files = input.files;
         if (!files || files.length === 0) {
@@ -201,7 +234,7 @@
         }
         feedback.textContent = files.length === 1 ? `✓ ${files[0].name} added` : `✓ ${files.length} images added`;
         feedback.classList.add("is-visible");
-        button.textContent = files.length > 1 ? `${baseText}s` : baseText;
+        button.textContent = files.length > 1 && !baseText.endsWith("s") ? `${baseText}s` : baseText;
       };
 
       imageInput.addEventListener("change", () => updateFeedback(imageInput, fileFeedback, classifyButton, "Classify image"));
@@ -243,69 +276,207 @@
         `;
       }).join("");
 
-      uploadForm.addEventListener("submit", async (event) => {
-        event.preventDefault();
-        if (!imageInput.files.length) return;
-        classifyButton.disabled = true;
-        classifyButton.textContent = "Classifying...";
-        resultPanel.innerHTML = `<div class="tab-loading-state"><div class="loader-spinner"></div><p>Classifying image...</p></div>`;
+      const makeTabId = () => `tab-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      const shortName = (name) => name.length > 28 ? `${name.slice(0, 14)}...${name.slice(-10)}` : name;
+      const tabThresholdText = (tab) => `${Math.round(Number(tab.confidence || confidenceSlider.value) * 100)}%`;
 
+      const renderDetectRefreshControl = (tab) => {
+        if (tab.kind !== "detect") return "";
+        const value = tab.confidence || confidenceSlider.value;
+        return `
+          <div class="tab-rerun-control">
+            <div class="rerun-copy">
+              <span class="rerun-label">Confidence</span>
+              <strong id="active-tab-confidence-value">${Math.round(Number(value) * 100)}%</strong>
+            </div>
+            <input id="active-tab-confidence-slider" data-tab-confidence-id="${tab.id}" type="range" min="0.05" max="0.50" step="0.05" value="${value}">
+            <button class="rerun-button" type="button" data-rerun-tab-id="${tab.id}" title="Refresh boxes with this confidence">↻ Refresh boxes</button>
+          </div>
+        `;
+      };
+
+      const renderActiveTabContent = () => {
+        const active = tabs.find((tab) => tab.id === activeTabId);
+        if (!active) {
+          return `
+            <div class="empty-state">
+              <div class="sample-tile"></div>
+              <h2>Upload an image to classify it.</h2>
+              <p>The app will run the current best local model and return a coral/brachiopod prediction or fossil boxes.</p>
+            </div>
+          `;
+        }
+        if (active.status === "loading") {
+          return `
+            <div class="tab-loading-state">
+              <div class="loader-spinner"></div>
+              <p>${escapeHTML(active.message || "Working on image...")}</p>
+              ${active.meta ? `<p class="tiny-pill">${escapeHTML(active.meta)}</p>` : ""}
+            </div>
+          `;
+        }
+        if (active.status === "error") {
+          return `
+            ${renderDetectRefreshControl(active)}
+            <div class="tab-error-state">
+              <div class="error">${escapeHTML(active.error || "Something went wrong.")}</div>
+              ${active.meta ? `<p class="description">${escapeHTML(active.meta)}</p>` : ""}
+            </div>
+          `;
+        }
+        return `${renderDetectRefreshControl(active)}${active.html}`;
+      };
+
+      const renderTabs = () => {
+        if (!tabs.length) {
+          resultPanel.innerHTML = renderActiveTabContent();
+          return;
+        }
+        const tabButtons = tabs.map((tab) => `
+          <div class="tab-item ${tab.id === activeTabId ? "active" : ""} ${tab.status === "loading" ? "is-loading" : ""} ${tab.status === "error" ? "is-error" : ""}" role="tab" tabindex="0" data-tab-id="${tab.id}">
+            <span class="tab-indicator-dot"></span>
+            <span class="tab-name" title="${escapeHTML(tab.name)}">${escapeHTML(shortName(tab.name))}</span>
+            <button class="tab-close-btn" type="button" aria-label="Close ${escapeHTML(tab.name)}" data-close-tab-id="${tab.id}">×</button>
+          </div>
+        `).join("");
+        resultPanel.innerHTML = `
+          <div class="tabs-container">
+            <div class="tab-bar" aria-label="Uploaded image tabs">${tabButtons}</div>
+            <div class="tab-content">${renderActiveTabContent()}</div>
+          </div>
+        `;
+        resultPanel.querySelectorAll("[data-tab-id]").forEach((button) => {
+          button.addEventListener("click", () => {
+            activeTabId = button.dataset.tabId;
+            renderTabs();
+          });
+          button.addEventListener("keydown", (event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              activeTabId = button.dataset.tabId;
+              renderTabs();
+            }
+          });
+        });
+        resultPanel.querySelectorAll("[data-close-tab-id]").forEach((button) => {
+          button.addEventListener("click", (event) => {
+            event.stopPropagation();
+            const id = button.dataset.closeTabId;
+            const index = tabs.findIndex((tab) => tab.id === id);
+            tabs = tabs.filter((tab) => tab.id !== id);
+            if (activeTabId === id) {
+              activeTabId = tabs[Math.max(0, index - 1)]?.id || tabs[0]?.id || null;
+            }
+            renderTabs();
+          });
+        });
+        const activeConfidenceSlider = resultPanel.querySelector("[data-tab-confidence-id]");
+        if (activeConfidenceSlider) {
+          activeConfidenceSlider.addEventListener("input", () => {
+            const id = activeConfidenceSlider.dataset.tabConfidenceId;
+            const value = activeConfidenceSlider.value;
+            tabs = tabs.map((tab) => tab.id === id ? { ...tab, confidence: value } : tab);
+            const output = document.getElementById("active-tab-confidence-value");
+            if (output) output.textContent = `${Math.round(Number(value) * 100)}%`;
+          });
+        }
+        resultPanel.querySelectorAll("[data-rerun-tab-id]").forEach((button) => {
+          button.addEventListener("click", async () => {
+            const id = button.dataset.rerunTabId;
+            const tab = tabs.find((item) => item.id === id);
+            if (!tab || !tab.file) return;
+            const confidence = tab.confidence || confidenceSlider.value;
+            setTabResult(id, {
+              status: "loading",
+              message: "Refreshing fossil boxes...",
+              meta: `Threshold ${Math.round(Number(confidence) * 100)}%`,
+            });
+            await detectOne(tab.file, id, confidence);
+          });
+        });
+      };
+
+      const addLoadingTabs = (files, kind, message, meta) => {
+        const newTabs = Array.from(files).map((file) => ({
+          id: makeTabId(),
+          name: file.name,
+          file,
+          kind,
+          confidence: kind === "detect" ? confidenceSlider.value : "",
+          status: "loading",
+          message,
+          meta,
+        }));
+        tabs = [...tabs, ...newTabs];
+        activeTabId = newTabs[0]?.id || activeTabId;
+        renderTabs();
+        return newTabs;
+      };
+
+      const setTabResult = (id, patch) => {
+        tabs = tabs.map((tab) => tab.id === id ? { ...tab, ...patch } : tab);
+        renderTabs();
+      };
+
+      const classifyOne = async (file, tabId) => {
         const formData = new FormData();
-        formData.append("image", imageInput.files[0]);
+        formData.append("image", file);
         try {
           const response = await fetch("/classify", { method: "POST", body: formData });
           const data = await response.json();
           if (!data.success) throw new Error(data.error || "Classification failed.");
-          resultPanel.innerHTML = `
-            <div class="result-grid">
-              <div class="preview-wrap"><img src="${data.image_url}" alt="Uploaded fossil photo"></div>
-              <div class="prediction">
-                <div class="prediction-info">
-                  <p class="eyebrow">Analysis Result</p>
-                  <h2>${escapeHTML(data.result.label)}</h2>
-                  <p class="description">${escapeHTML(data.result.description)}</p>
+          setTabResult(tabId, {
+            status: "ready",
+            html: `
+              <div class="result-grid">
+                <div class="preview-wrap"><img src="${data.image_url}" alt="Uploaded fossil photo"></div>
+                <div class="prediction">
+                  <div class="prediction-info">
+                    <p class="eyebrow">Analysis Result</p>
+                    <h2>${escapeHTML(data.result.label)}</h2>
+                    <p class="description">${escapeHTML(data.result.description)}</p>
+                  </div>
+                  <div class="confidence-ring"><span class="ring-value">${data.result.confidence_percent}%</span><span class="ring-label">Certainty</span></div>
+                  <div class="bars"><p class="bars-heading">Probability Breakdown</p>${renderBars(data.result.ranked)}</div>
                 </div>
-                <div class="confidence-ring"><span class="ring-value">${data.result.confidence_percent}%</span><span class="ring-label">Certainty</span></div>
-                <div class="bars"><p class="bars-heading">Probability Breakdown</p>${renderBars(data.result.ranked)}</div>
               </div>
-            </div>
-          `;
+            `,
+          });
         } catch (error) {
-          resultPanel.innerHTML = `<div class="tab-error-state"><div class="error">${escapeHTML(error.message)}</div></div>`;
-        } finally {
-          classifyButton.disabled = false;
-          classifyButton.textContent = "Classify image";
+          setTabResult(tabId, { status: "error", error: error.message });
         }
-      });
+      };
 
-      detectForm.addEventListener("submit", async (event) => {
-        event.preventDefault();
-        if (!detectImage.files.length) return;
-        detectButton.disabled = true;
-        detectButton.textContent = "Boxing fossils...";
-
+      const detectOne = async (file, tabId, confidence) => {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 120000);
-        const started = Date.now();
-        const timer = setInterval(() => {
-          const timerSpan = document.getElementById("detect-timer-span");
-          if (timerSpan) timerSpan.textContent = `${((Date.now() - started) / 1000).toFixed(1)}s`;
-        }, 150);
-
-        resultPanel.innerHTML = `
-          <div class="tab-loading-state">
-            <div class="loader-spinner"></div>
-            <p>Loading YOLO detector and drawing fossil boxes...</p>
-            <p class="tiny-pill">Elapsed <span id="detect-timer-span">0.0s</span></p>
-          </div>
-        `;
-
         const formData = new FormData();
-        formData.append("image", detectImage.files[0]);
+        formData.append("image", file);
+        formData.append("confidence", confidence);
         try {
           const response = await fetch("/detect", { method: "POST", body: formData, signal: controller.signal });
           const data = await response.json();
           if (!data.success) throw new Error(data.error || "Detection failed.");
+          if (data.no_detections || !data.fossils.length) {
+            setTabResult(tabId, {
+              status: "ready",
+              confidence,
+              html: `
+                <div class="detection-result-container">
+                  <div class="detection-header-summary">
+                    <p class="eyebrow">YOLO box detector</p>
+                    <h2>No fossil boxes found</h2>
+                    <p class="description">Confidence threshold: ${(Number(confidence) * 100).toFixed(0)}%. Try refreshing this tab with a lower confidence level.</p>
+                  </div>
+                  <div class="failed-detection-wrap">
+                    <div class="failure-badge" aria-label="No fossils detected">×</div>
+                    <img src="${data.annotated_image_url}" alt="Uploaded image with no fossil boxes detected">
+                  </div>
+                </div>
+              `,
+            });
+            return;
+          }
           const fossilCards = data.fossils.map((fossil) => `
             <div class="specimen-card">
               <div class="specimen-top">
@@ -317,23 +488,70 @@
               <p class="description">Box confidence: ${(fossil.score * 100).toFixed(1)}%</p>
             </div>
           `).join("");
-
-          resultPanel.innerHTML = `
-            <div class="detection-result-container">
-              <div class="detection-header-summary">
-                <p class="eyebrow">YOLO box detector</p>
-                <h2>Found ${data.fossils.length} fossil boxes</h2>
-                <p class="description">The number next to each drawn box is the detector confidence. Use Classify mode on a close-up crop when you want coral vs brachiopod.</p>
+          setTabResult(tabId, {
+            status: "ready",
+            confidence,
+            html: `
+              <div class="detection-result-container">
+                <div class="detection-header-summary">
+                  <p class="eyebrow">YOLO box detector</p>
+                  <h2>Found ${data.fossils.length} fossil boxes</h2>
+                  <p class="description">Confidence threshold: ${(Number(confidence) * 100).toFixed(0)}%. The number next to each drawn box is the detector confidence.</p>
+                </div>
+                <div class="annotated-preview-wrap"><img src="${data.annotated_image_url}" alt="Image with fossil boxes"></div>
+                <div class="specimens-grid">${fossilCards}</div>
               </div>
-              <div class="annotated-preview-wrap"><img src="${data.annotated_image_url}" alt="Image with fossil boxes"></div>
-              <div class="specimens-grid">${fossilCards}</div>
-            </div>
-          `;
+            `,
+          });
         } catch (error) {
-          resultPanel.innerHTML = `<div class="tab-error-state"><div class="error">${escapeHTML(error.name === "AbortError" ? "Detector timed out after 120 seconds." : error.message)}</div></div>`;
+          setTabResult(tabId, {
+            status: "error",
+            confidence,
+            error: error.name === "AbortError" ? "Detector timed out after 120 seconds." : error.message,
+            meta: `Tried threshold ${(Number(confidence) * 100).toFixed(0)}%`,
+          });
         } finally {
-          clearInterval(timer);
           clearTimeout(timeoutId);
+        }
+      };
+
+      uploadForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        if (!imageInput.files.length) return;
+        classifyButton.disabled = true;
+        classifyButton.textContent = "Classifying...";
+        const jobs = addLoadingTabs(imageInput.files, "classify", "Classifying image...", "");
+        for (let index = 0; index < jobs.length; index += 1) {
+          await classifyOne(imageInput.files[index], jobs[index].id);
+        }
+        try {
+          imageInput.value = "";
+          updateFeedback(imageInput, fileFeedback, classifyButton, "Classify image");
+        } finally {
+          classifyButton.disabled = false;
+          classifyButton.textContent = "Classify image";
+        }
+      });
+
+      detectForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        if (!detectImage.files.length) return;
+        detectButton.disabled = true;
+        detectButton.textContent = "Boxing fossils...";
+        const confidence = confidenceSlider.value;
+        const jobs = addLoadingTabs(
+          detectImage.files,
+          "detect",
+          "Drawing fossil boxes...",
+          `Threshold ${Math.round(Number(confidence) * 100)}%`
+        );
+        for (let index = 0; index < jobs.length; index += 1) {
+          await detectOne(detectImage.files[index], jobs[index].id, confidence);
+        }
+        try {
+          detectImage.value = "";
+          updateFeedback(detectImage, detectFileFeedback, detectButton, "Box fossils");
+        } finally {
           detectButton.disabled = false;
           detectButton.textContent = "Box fossils";
         }

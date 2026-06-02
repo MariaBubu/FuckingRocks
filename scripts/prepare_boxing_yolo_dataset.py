@@ -16,9 +16,11 @@ from PIL import Image, ImageOps
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE_ROOT = ROOT.parent / "FuckingFossils" / "BoxingData"
 APPROVED_DIR = SOURCE_ROOT / "BoxingApproved"
+CLASSIFIER_ONLY_DIR = SOURCE_ROOT / "ClassifierOnly"
 NOISE_DIR = SOURCE_ROOT / "TileNoise"
-LABELS_DIR = SOURCE_ROOT / "boxingapproved_yolo_labels"
-OUTPUT_DIR = ROOT / "data" / "boxing_yolo_clean"
+APPROVED_LABELS_DIR = SOURCE_ROOT / "boxingapproved_yolo_labels"
+CLASSIFIER_ONLY_LABELS_DIR = SOURCE_ROOT / "labels_still_thesis_2026-06-02-03-12-29"
+OUTPUT_DIR = ROOT / "data" / "boxing_yolo_combined"
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tif", ".tiff"}
 RANDOM_SEED = 42
@@ -33,6 +35,7 @@ class Item:
     source_image: Path
     source_label: Path | None
     kind: str
+    source_group: str
 
 
 def safe_name(path: Path, prefix: str) -> str:
@@ -112,7 +115,7 @@ def copy_split(split_name: str, items: list[Item], manifest: list[dict], skipped
 
     box_count = 0
     for item in items:
-        prefix = "pos" if item.kind == "fossil" else "neg"
+        prefix = f"pos_{item.source_group}" if item.kind == "fossil" else "neg_tile_noise"
         image_name = safe_name(item.source_image, prefix)
         label_name = f"{Path(image_name).stem}.txt"
         image_target = images_out / image_name
@@ -143,6 +146,7 @@ def copy_split(split_name: str, items: list[Item], manifest: list[dict], skipped
         manifest.append({
             "split": split_name,
             "kind": item.kind,
+            "source_group": item.source_group,
             "boxes": boxes,
             "source_image": str(item.source_image),
             "image": str(image_target.relative_to(OUTPUT_DIR)),
@@ -152,39 +156,71 @@ def copy_split(split_name: str, items: list[Item], manifest: list[dict], skipped
 
 
 def main() -> None:
-    if not APPROVED_DIR.exists():
-        raise FileNotFoundError(f"Missing approved image folder: {APPROVED_DIR}")
+    positive_groups = [
+        ("approved", APPROVED_DIR, APPROVED_LABELS_DIR),
+        ("classifier_only", CLASSIFIER_ONLY_DIR, CLASSIFIER_ONLY_LABELS_DIR),
+    ]
+
+    for group_name, image_dir, labels_dir in positive_groups:
+        if not image_dir.exists():
+            raise FileNotFoundError(f"Missing {group_name} image folder: {image_dir}")
+        if not labels_dir.exists():
+            raise FileNotFoundError(f"Missing {group_name} YOLO labels folder: {labels_dir}")
     if not NOISE_DIR.exists():
         raise FileNotFoundError(f"Missing tile-noise folder: {NOISE_DIR}")
-    if not LABELS_DIR.exists():
-        raise FileNotFoundError(f"Missing YOLO labels folder: {LABELS_DIR}")
 
-    approved_images = image_files(APPROVED_DIR)
     noise_images = image_files(NOISE_DIR)
-    label_by_stem = {path.stem: path for path in sorted(LABELS_DIR.glob("*.txt"))}
 
     labeled_items: list[Item] = []
-    missing_label_images: list[str] = []
+    positive_group_summaries: dict[str, dict] = {}
     total_boxes = 0
     validation_errors: list[str] = []
 
-    for image in approved_images:
-        label = label_by_stem.get(image.stem)
-        if label is None:
-            missing_label_images.append(image.name)
-            continue
-        boxes, errors = validate_label_file(label)
-        total_boxes += boxes
-        validation_errors.extend(errors)
-        if boxes == 0:
-            missing_label_images.append(image.name)
-            continue
-        labeled_items.append(Item(source_image=image, source_label=label, kind="fossil"))
+    for group_name, image_dir, labels_dir in positive_groups:
+        positive_images = image_files(image_dir)
+        label_by_stem = {path.stem: path for path in sorted(labels_dir.glob("*.txt"))}
+        group_boxes = 0
+        group_items = 0
+        missing_or_empty_labels: list[str] = []
+
+        for image in positive_images:
+            label = label_by_stem.get(image.stem)
+            if label is None:
+                missing_or_empty_labels.append(image.name)
+                continue
+            boxes, errors = validate_label_file(label)
+            group_boxes += boxes
+            validation_errors.extend(errors)
+            if boxes == 0:
+                missing_or_empty_labels.append(image.name)
+                continue
+            labeled_items.append(
+                Item(
+                    source_image=image,
+                    source_label=label,
+                    kind="fossil",
+                    source_group=group_name,
+                )
+            )
+            group_items += 1
+
+        total_boxes += group_boxes
+        positive_group_summaries[group_name] = {
+            "image_dir": str(image_dir),
+            "labels_dir": str(labels_dir),
+            "images": len(positive_images),
+            "labeled_fossil_images_used": group_items,
+            "total_fossil_boxes": group_boxes,
+            "missing_or_empty_label_images": missing_or_empty_labels,
+        }
 
     if validation_errors:
         raise ValueError("Invalid YOLO labels:\n" + "\n".join(validation_errors[:20]))
 
-    noise_items = [Item(source_image=image, source_label=None, kind="tile_noise") for image in noise_images]
+    noise_items = [
+        Item(source_image=image, source_label=None, kind="tile_noise", source_group="tile_noise")
+        for image in noise_images
+    ]
 
     for split in ["train", "val", "test"]:
         shutil.rmtree(OUTPUT_DIR / "images" / split, ignore_errors=True)
@@ -199,11 +235,10 @@ def main() -> None:
     summary = {
         "source_root": str(SOURCE_ROOT),
         "output_dir": str(OUTPUT_DIR),
-        "approved_images": len(approved_images),
+        "positive_groups": positive_group_summaries,
         "labeled_fossil_images_used": len(labeled_items),
         "tile_noise_images_used": len(noise_items),
         "total_fossil_boxes": total_boxes,
-        "missing_or_empty_label_approved_images": missing_label_images,
         "splits": {},
     }
 

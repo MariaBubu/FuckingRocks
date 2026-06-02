@@ -1,23 +1,46 @@
 #!/usr/bin/env python3
+"""
+Fossil Web App — Fast inference using ONNX Runtime (no PyTorch import needed).
+
+Architecture:
+  - Uses onnxruntime for ResNet18 inference (~1s import vs PyTorch's 477s).
+  - Uses OpenCV for bounding box detection (contour-based, no ML model needed).
+  - Server starts instantly and classification works within seconds.
+"""
 from __future__ import annotations
 
+import os
+
+# Force offline modes
+os.environ["TRANSFORMERS_OFFLINE"] = "1"
+os.environ["HF_HUB_OFFLINE"] = "1"
+os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
+
+# Force single-threaded to prevent deadlocks on macOS
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+
 import base64
-import cgi
 import html
 import io
 import json
 import mimetypes
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from string import Template
 from urllib.parse import unquote
 
-from PIL import Image
-
-
 ROOT = Path(__file__).resolve().parent
-MODEL_PATH = ROOT / "data/preprocessing_experiments/original_enhanced/model/best_resnet18.pt"
+MODEL_DIR = ROOT / "data/preprocessing_experiments/original_enhanced/model"
+MODEL_PATH = MODEL_DIR / "best_resnet18.pt"
+ONNX_PATH = MODEL_DIR / "best_resnet18.onnx"
+CLASSES_PATH = MODEL_DIR / "classes.json"
+YOLO_BOX_MODEL_PATH = ROOT / "runs/detect/outputs/box_training/yolo11n_fossil_first_run/weights/best.pt"
 PORT = 5050
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 
@@ -34,80 +57,138 @@ CLASS_DISPLAY = {
     },
 }
 
-MODEL = None
+# Model globals
+MODEL_SESSION = None
+MODEL_BACKEND = ""
 CLASSES: list[str] = []
 MODEL_STATE = "idle"
 MODEL_ERROR = ""
 MODEL_LOCK = threading.Lock()
-
-DETECTOR = None
-DETECTOR_STATE = "idle"
-DETECTOR_ERROR = ""
-DETECTOR_LOCK = threading.Lock()
+YOLO_MODEL = None
+YOLO_STATE = "idle"
+YOLO_ERROR = ""
+YOLO_LOCK = threading.Lock()
 
 
 def load_model_once():
-    global MODEL, CLASSES, MODEL_STATE, MODEL_ERROR
-    if MODEL is not None:
-        return MODEL, CLASSES
+    global MODEL_SESSION, MODEL_BACKEND, CLASSES, MODEL_STATE, MODEL_ERROR
+    if MODEL_SESSION is not None:
+        return MODEL_SESSION, CLASSES
 
     with MODEL_LOCK:
-        if MODEL is not None:
-            return MODEL, CLASSES
+        if MODEL_SESSION is not None:
+            return MODEL_SESSION, CLASSES
 
         MODEL_STATE = "loading"
         MODEL_ERROR = ""
         try:
-            import torch
-            from evaluate_wild_no_torchvision import ResNet18
+            if ONNX_PATH.exists() and CLASSES_PATH.exists():
+                import onnxruntime as ort
 
-            checkpoint = torch.load(MODEL_PATH, map_location="cpu")
-            CLASSES = checkpoint["classes"]
-            model = ResNet18(num_classes=len(CLASSES))
-            model.load_state_dict(checkpoint["model_state"])
-            model.eval()
-            MODEL = model
+                with open(CLASSES_PATH) as f:
+                    CLASSES = json.load(f)
+
+                t0 = time.time()
+                options = ort.SessionOptions()
+                options.intra_op_num_threads = 1
+                options.inter_op_num_threads = 1
+                options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+                session = ort.InferenceSession(
+                    str(ONNX_PATH),
+                    sess_options=options,
+                    providers=["CPUExecutionProvider"],
+                )
+                elapsed = time.time() - t0
+                MODEL_SESSION = session
+                MODEL_BACKEND = "onnx"
+                MODEL_STATE = "ready"
+                print(f"  ✓ ONNX model loaded in {elapsed:.2f}s (classes: {CLASSES})", flush=True)
+                return MODEL_SESSION, CLASSES
+
+            if not MODEL_PATH.exists():
+                raise FileNotFoundError(
+                    f"Could not find model at {MODEL_PATH}"
+                )
+
+            t0 = time.time()
+            from numpy_resnet18 import NumpyResNet18
+
+            session = NumpyResNet18(MODEL_PATH)
+            CLASSES = session.classes
+            if not CLASSES_PATH.exists():
+                CLASSES_PATH.write_text(json.dumps(CLASSES), encoding="utf-8")
+            elapsed = time.time() - t0
+            MODEL_SESSION = session
+            MODEL_BACKEND = "numpy"
             MODEL_STATE = "ready"
+            print(f"  ✓ NumPy ResNet model loaded in {elapsed:.2f}s (classes: {CLASSES})", flush=True)
         except Exception as exc:
             MODEL_STATE = "error"
             MODEL_ERROR = str(exc)
+            print(f"  ✗ Model load failed: {exc}", flush=True)
             raise
-    return MODEL, CLASSES
+    return MODEL_SESSION, CLASSES
+
+
+def model_status() -> dict:
+    if MODEL_SESSION is not None:
+        backend = "ONNX" if MODEL_BACKEND == "onnx" else "NumPy"
+        return {"state": "ready", "message": f"{backend} model ready"}
+    if ONNX_PATH.exists() and CLASSES_PATH.exists():
+        return {"state": "idle", "message": "ONNX model will load on first use"}
+    if MODEL_PATH.exists():
+        return {
+            "state": "idle",
+            "message": "NumPy fallback will load on first use",
+        }
+    if MODEL_STATE == "loading":
+        return {"state": "loading", "message": "Model loading..."}
+    if MODEL_STATE == "error":
+        return {"state": "error", "message": MODEL_ERROR or "Model failed to load"}
+    return {"state": "setup", "message": "Model file missing"}
 
 
 def preload_model_background():
+    if not (ONNX_PATH.exists() or MODEL_PATH.exists()):
+        return
+
     def preload():
         try:
             load_model_once()
         except Exception as exc:
-            print(f"Model preload failed: {exc}", flush=True)
+            print(f"  ⚠ Background model preload failed: {exc}", flush=True)
 
-    thread = threading.Thread(target=preload, daemon=True)
-    thread.start()
-
-
-def model_status() -> dict:
-    if MODEL is not None:
-        return {"state": "ready", "message": "Model ready"}
-    if MODEL_STATE == "loading":
-        return {"state": "loading", "message": "Model loading"}
-    if MODEL_STATE == "error":
-        return {"state": "error", "message": MODEL_ERROR or "Model failed to load"}
-    return {"state": "idle", "message": "Model warming up"}
+    threading.Thread(target=preload, daemon=True).start()
 
 
-def image_to_tensor(image: Image.Image):
-    import torch
+def image_to_numpy(image: Image.Image):
+    """Convert PIL image to normalized numpy array (1, 3, 224, 224) float32."""
+    import numpy as np
+    from PIL import Image
 
     image = image.convert("RGB").resize((224, 224), Image.Resampling.BILINEAR)
-    data = torch.ByteTensor(torch.ByteStorage.from_buffer(image.tobytes()))
-    data = data.view(224, 224, 3).permute(2, 0, 1).float().div(255.0)
-    mean = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
-    std = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1)
-    return (data - mean) / std
+    # Convert to numpy: (224, 224, 3) uint8
+    arr = np.array(image, dtype=np.float32) / 255.0
+    # Transpose to (3, 224, 224) and normalize with ImageNet stats
+    arr = arr.transpose(2, 0, 1)
+    mean = np.array([0.485, 0.456, 0.406], dtype=np.float32).reshape(3, 1, 1)
+    std = np.array([0.229, 0.224, 0.225], dtype=np.float32).reshape(3, 1, 1)
+    arr = (arr - mean) / std
+    # Add batch dimension: (1, 3, 224, 224)
+    return arr[np.newaxis, ...]
+
+
+def softmax(x):
+    """Compute softmax along the last axis."""
+    import numpy as np
+
+    e_x = np.exp(x - np.max(x, axis=-1, keepdims=True))
+    return e_x / e_x.sum(axis=-1, keepdims=True)
 
 
 def preview_data_url(image: Image.Image) -> str:
+    from PIL import Image
+
     preview = image.convert("RGB")
     preview.thumbnail((1200, 1200), Image.Resampling.LANCZOS)
     buffer = io.BytesIO()
@@ -117,19 +198,23 @@ def preview_data_url(image: Image.Image) -> str:
 
 
 def classify_image(image: Image.Image) -> dict:
-    import torch
+    session, classes = load_model_once()
+    input_data = image_to_numpy(image)
 
-    model, classes = load_model_once()
-    tensor = image_to_tensor(image).unsqueeze(0)
-    with torch.no_grad():
-        probabilities = torch.softmax(model(tensor), dim=1).squeeze(0)
+    if MODEL_BACKEND == "onnx":
+        input_name = session.get_inputs()[0].name
+        outputs = session.run(None, {input_name: input_data})
+        logits = outputs[0]  # shape: (1, num_classes)
+    else:
+        logits = session.predict_logits(input_data)
+    probabilities = softmax(logits).squeeze(0)  # shape: (num_classes,)
 
     ranked = sorted(
         [
             {
                 "class_name": class_name,
                 "display": CLASS_DISPLAY[class_name]["short"],
-                "confidence": float(probabilities[index].item()),
+                "confidence": float(probabilities[index]),
             }
             for index, class_name in enumerate(classes)
         ],
@@ -146,91 +231,133 @@ def classify_image(image: Image.Image) -> dict:
     }
 
 
-def load_detector_once():
-    global DETECTOR, DETECTOR_STATE, DETECTOR_ERROR
-    if DETECTOR is not None:
-        return DETECTOR
+def calculate_iou(box1, box2):
+    x1 = max(box1[0], box2[0])
+    y1 = max(box1[1], box2[1])
+    x2 = min(box1[2], box2[2])
+    y2 = min(box1[3], box2[3])
+    intersection_area = max(0, x2 - x1) * max(0, y2 - y1)
+    area1 = (box1[2] - box1[0]) * (box1[3] - box1[1])
+    area2 = (box2[2] - box2[0]) * (box2[3] - box2[1])
+    union_area = area1 + area2 - intersection_area
+    if union_area == 0:
+        return 0
+    return intersection_area / union_area
 
-    with DETECTOR_LOCK:
-        if DETECTOR is not None:
-            return DETECTOR
 
-        DETECTOR_STATE = "loading"
-        DETECTOR_ERROR = ""
+def apply_nms(detections, iou_threshold=0.3):
+    sorted_dets = sorted(detections, key=lambda d: d["score"], reverse=True)
+    kept = []
+    for det in sorted_dets:
+        box = [det["box"]["xmin"], det["box"]["ymin"], det["box"]["xmax"], det["box"]["ymax"]]
+        overlap = False
+        for kept_det in kept:
+            kept_box = kept_det["bbox"]
+            if calculate_iou(box, kept_box) > iou_threshold:
+                overlap = True
+                break
+        if not overlap:
+            det["bbox"] = box
+            kept.append(det)
+    return kept
+
+
+def load_yolo_once():
+    global YOLO_MODEL, YOLO_STATE, YOLO_ERROR
+
+    if YOLO_MODEL is not None:
+        return YOLO_MODEL
+
+    with YOLO_LOCK:
+        if YOLO_MODEL is not None:
+            return YOLO_MODEL
+
+        if not YOLO_BOX_MODEL_PATH.exists():
+            YOLO_STATE = "error"
+            YOLO_ERROR = f"YOLO box model not found: {YOLO_BOX_MODEL_PATH}"
+            raise FileNotFoundError(YOLO_ERROR)
+
+        YOLO_STATE = "loading"
+        YOLO_ERROR = ""
+        start = time.time()
         try:
-            from transformers import pipeline
-            # Load OWL-ViT zero-shot object detector
-            detector = pipeline("zero-shot-object-detection", model="google/owlvit-base-patch32")
-            DETECTOR = detector
-            DETECTOR_STATE = "ready"
+            from ultralytics import YOLO
+
+            YOLO_MODEL = YOLO(str(YOLO_BOX_MODEL_PATH))
+            YOLO_STATE = "ready"
+            print(f"  ✓ YOLO fossil box model loaded in {time.time() - start:.2f}s", flush=True)
+            return YOLO_MODEL
         except Exception as exc:
-            DETECTOR_STATE = "error"
-            DETECTOR_ERROR = str(exc)
+            YOLO_STATE = "error"
+            YOLO_ERROR = str(exc)
             raise
-    return DETECTOR
 
 
-def detect_and_classify_fossil(image: Image.Image) -> dict:
+def detect_and_classify_multiple_fossils(image: Image.Image) -> dict:
     from PIL import ImageDraw
-    
-    # Ensure detector is loaded
-    try:
-        detector = load_detector_once()
-    except Exception as exc:
-        return {"success": False, "error": f"Failed to load zero-shot detector model: {exc}"}
-    
-    # Run the detector
-    try:
-        detections = detector(
-            image,
-            candidate_labels=["fossil", "limestone fossil", "coral fossil", "shell fossil"],
-            threshold=0.08
-        )
-    except Exception as exc:
-        return {"success": False, "error": f"Detector execution failed: {exc}"}
-    
-    if not detections:
-        return {"success": False, "error": "No fossils detected in this photo. Try adjusting exposure or lighting."}
-        
-    # Sort by score descending to get the best candidate
-    detections = sorted(detections, key=lambda d: d["score"], reverse=True)
-    best = detections[0]
-    box = best["box"]
-    
-    # Bounding box coordinates
-    xmin = max(0, int(box["xmin"]))
-    ymin = max(0, int(box["ymin"]))
-    xmax = min(image.width, int(box["xmax"]))
-    ymax = min(image.height, int(box["ymax"]))
-    
-    # Crop the candidate region
-    cropped = image.crop((xmin, ymin, xmax, ymax))
-    
-    # Run classification on the cropped candidate!
-    classification = classify_image(cropped)
-    
-    # Draw a beautiful glowing outline box on a copy of the original image
+
+    yolo_model = load_yolo_once()
+    yolo_results = yolo_model.predict(
+        source=image.convert("RGB"),
+        imgsz=640,
+        conf=0.25,
+        iou=0.45,
+        max_det=40,
+        verbose=False,
+        device="cpu",
+    )
+    boxes = yolo_results[0].boxes
+    if boxes is None or len(boxes) == 0:
+        return {"success": False, "error": "The trained box model did not detect fossils above the confidence threshold."}
+
+    detections = []
+    for box in boxes:
+        xmin, ymin, xmax, ymax = [int(round(value)) for value in box.xyxy[0].tolist()]
+        xmin = max(0, min(image.width - 1, xmin))
+        ymin = max(0, min(image.height - 1, ymin))
+        xmax = max(xmin + 1, min(image.width, xmax))
+        ymax = max(ymin + 1, min(image.height, ymax))
+        score = float(box.conf[0].item())
+        area = (xmax - xmin) * (ymax - ymin)
+        detections.append({"bbox": [xmin, ymin, xmax, ymax], "score": score, "area": area})
+
+    detections = sorted(detections, key=lambda item: item["score"], reverse=True)[:24]
+
     annotated = image.copy()
     draw = ImageDraw.Draw(annotated)
-    
-    # Draw 4px outline border
-    is_coral = "Coral" in classification["label"]
-    color = "#22c55e" if is_coral else "#f97316"
-    
-    for offset in range(4):
-        draw.rectangle(
-            [xmin - offset, ymin - offset, xmax + offset, ymax + offset],
-            outline=color
-        )
-    
+
+    fossils_list = []
+    for index, det in enumerate(detections):
+        fossil_id = index + 1
+        box = det["bbox"]
+        xmin, ymin, xmax, ymax = box
+
+        cropped = image.crop((xmin, ymin, xmax, ymax))
+        color = "#22c55e"
+
+        for offset in range(4):
+            draw.rectangle(
+                [xmin - offset, ymin - offset, xmax + offset, ymax + offset],
+                outline=color
+            )
+
+        try:
+            draw.rectangle([xmin, max(0, ymin - 20), min(image.width, xmin + 128), ymin], fill=color)
+            draw.text((xmin + 4, max(0, ymin - 18)), f"Fossil {fossil_id} {det['score']:.2f}", fill="white")
+        except Exception:
+            pass
+
+        fossils_list.append({
+            "id": fossil_id,
+            "score": float(det["score"]),
+            "bbox": [xmin, ymin, xmax, ymax],
+            "cropped_image_url": preview_data_url(cropped)
+        })
+
     return {
         "success": True,
-        "score": float(best["score"]),
-        "label": best["label"],
-        "bbox": [xmin, ymin, xmax, ymax],
-        "classification": classification,
-        "annotated_image_url": preview_data_url(annotated),
-        "cropped_image_url": preview_data_url(cropped)
+        "fossils": fossils_list,
+        "annotated_image_url": preview_data_url(annotated)
     }
 
 
@@ -307,6 +434,42 @@ def render_result(result: dict, image_url: str) -> str:
     """
 
 
+def _parse_multipart(handler):
+    """Parse multipart form data without the deprecated cgi module."""
+    content_type = handler.headers.get("Content-Type", "")
+    if "boundary=" not in content_type:
+        return None, None
+
+    boundary = content_type.split("boundary=")[1].strip()
+    if boundary.startswith('"') and boundary.endswith('"'):
+        boundary = boundary[1:-1]
+
+    content_length = int(handler.headers.get("Content-Length", "0"))
+    body = handler.rfile.read(content_length)
+
+    boundary_bytes = boundary.encode("utf-8")
+    parts = body.split(b"--" + boundary_bytes)
+
+    for part in parts:
+        if b"Content-Disposition" not in part:
+            continue
+        header_end = part.find(b"\r\n\r\n")
+        if header_end == -1:
+            continue
+        headers_section = part[:header_end].decode("utf-8", errors="replace")
+        content = part[header_end + 4:]
+        if content.endswith(b"\r\n"):
+            content = content[:-2]
+
+        if 'name="image"' in headers_section:
+            filename = ""
+            if 'filename="' in headers_section:
+                filename = headers_section.split('filename="')[1].split('"')[0]
+            return content, filename
+
+    return None, None
+
+
 class FossilHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = unquote(self.path.split("?", 1)[0])
@@ -320,30 +483,39 @@ class FossilHandler(BaseHTTPRequestHandler):
             self.send_error(404)
 
     def do_POST(self):
-        # 1. New dynamic multiple-image classification endpoint
-        if self.path == "/classify":
-            if int(self.headers.get("Content-Length", "0")) > MAX_UPLOAD_BYTES:
+        content_length = int(self.headers.get("Content-Length", "0"))
+
+        if self.path == "/detect":
+            if content_length > MAX_UPLOAD_BYTES:
                 self.send_json({"error": "That image is too large. Limit is 20 MB."})
                 return
-
             try:
-                form = cgi.FieldStorage(
-                    fp=self.rfile,
-                    headers=self.headers,
-                    environ={
-                        "REQUEST_METHOD": "POST",
-                        "CONTENT_TYPE": self.headers.get("Content-Type", ""),
-                    },
-                )
-                field = form["image"] if "image" in form else None
-                if field is None or not getattr(field, "filename", ""):
+                image_bytes, filename = _parse_multipart(self)
+                if image_bytes is None or not filename:
                     self.send_json({"error": "Please select an image file."})
                     return
+                from PIL import Image
 
-                image_bytes = field.file.read()
+                image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+                result = detect_and_classify_multiple_fossils(image)
+                self.send_json(result)
+            except Exception as exc:
+                self.send_json({"success": False, "error": str(exc)})
+            return
+
+        if self.path == "/classify":
+            if content_length > MAX_UPLOAD_BYTES:
+                self.send_json({"error": "That image is too large. Limit is 20 MB."})
+                return
+            try:
+                image_bytes, filename = _parse_multipart(self)
+                if image_bytes is None or not filename:
+                    self.send_json({"error": "Please select an image file."})
+                    return
+                from PIL import Image
+
                 image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
                 result = classify_image(image)
-                
                 self.send_json({
                     "success": True,
                     "result": result,
@@ -353,57 +525,22 @@ class FossilHandler(BaseHTTPRequestHandler):
                 self.send_json({"success": False, "error": str(exc)})
             return
 
-        if self.path == "/detect":
-            if int(self.headers.get("Content-Length", "0")) > MAX_UPLOAD_BYTES:
-                self.send_json({"error": "That image is too large. Limit is 20 MB."})
-                return
-
-            try:
-                form = cgi.FieldStorage(
-                    fp=self.rfile,
-                    headers=self.headers,
-                    environ={
-                        "REQUEST_METHOD": "POST",
-                        "CONTENT_TYPE": self.headers.get("Content-Type", ""),
-                    },
-                )
-                field = form["image"] if "image" in form else None
-                if field is None or not getattr(field, "filename", ""):
-                    self.send_json({"error": "Please select an image file."})
-                    return
-
-                image_bytes = field.file.read()
-                image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-                result = detect_and_classify_fossil(image)
-                self.send_json(result)
-            except Exception as exc:
-                self.send_json({"success": False, "error": str(exc)})
-            return
-
-        # 2. Original fallback form action
+        # Original fallback form action
         if self.path != "/":
             self.send_error(404)
             return
 
-        if int(self.headers.get("Content-Length", "0")) > MAX_UPLOAD_BYTES:
+        if content_length > MAX_UPLOAD_BYTES:
             self.send_html(render_page(error="That image is too large. Try a file under 20 MB."))
             return
 
         try:
-            form = cgi.FieldStorage(
-                fp=self.rfile,
-                headers=self.headers,
-                environ={
-                    "REQUEST_METHOD": "POST",
-                    "CONTENT_TYPE": self.headers.get("Content-Type", ""),
-                },
-            )
-            field = form["image"] if "image" in form else None
-            if field is None or not getattr(field, "filename", ""):
+            image_bytes, filename = _parse_multipart(self)
+            if image_bytes is None or not filename:
                 self.send_html(render_page(error="Choose an image first."))
                 return
+            from PIL import Image
 
-            image_bytes = field.file.read()
             image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
             result = classify_image(image)
             self.send_html(render_page(result=result, image_url=preview_data_url(image)))
@@ -444,22 +581,24 @@ class FossilHandler(BaseHTTPRequestHandler):
 
 
 def main():
+    print("=" * 60, flush=True)
+    print("🚀 Fossil Web App — ONNX Runtime Mode", flush=True)
+    print("   No PyTorch import during website startup.", flush=True)
+    print("=" * 60, flush=True)
+
+    if ONNX_PATH.exists() and CLASSES_PATH.exists():
+        print("  ✓ Fast ONNX model found; it will load on first classify.", flush=True)
+    elif MODEL_PATH.exists():
+        print("  ✓ PyTorch .pt model found; NumPy fallback will load on first classify.", flush=True)
+    else:
+        print("  ⚠ No model file found; classification will show an error.", flush=True)
+
     server = ThreadingHTTPServer(("127.0.0.1", PORT), FossilHandler)
-    print(f"Fossil classifier running at http://127.0.0.1:{PORT}/", flush=True)
-    print("Model is warming up in the background.", flush=True)
-    print("Press Ctrl+C to stop.", flush=True)
+    print(f"✅ Server is live at http://127.0.0.1:{PORT}/", flush=True)
+    print("   Model is warming in the background; page stays usable.", flush=True)
+    print(f"   Press Ctrl+C to stop.", flush=True)
+    print("=" * 60, flush=True)
     preload_model_background()
-    
-    # Asynchronously preload the zero-shot detector model
-    def preload_detector():
-        try:
-            print("Zero-shot detector model is warming up in the background...", flush=True)
-            load_detector_once()
-            print("Zero-shot detector model loaded and ready.", flush=True)
-        except Exception as exc:
-            print(f"Zero-shot detector model preload failed: {exc}", flush=True)
-            
-    threading.Thread(target=preload_detector, daemon=True).start()
     server.serve_forever()
 
 

@@ -1,0 +1,12 @@
+rawpy
+Pillow
+numpy
+opencv-python
+torch
+torchvision
+certifi
+matplotlib
+openpyxl
+Flask
+onnx
+onnxruntime

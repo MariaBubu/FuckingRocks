@@ -810,6 +810,17 @@ h2 {
   background-color: var(--color-danger);
 }
 
+.model-status.is-setup {
+  border-color: rgba(var(--color-primary-rgb), 0.2);
+  background-color: rgba(var(--color-primary-rgb), 0.08);
+  color: var(--color-primary);
+}
+
+.model-status.is-setup::before {
+  background-color: var(--color-primary);
+  animation: none;
+}
+
 @keyframes pulse-dot {
   0% { transform: scale(0.9); opacity: 0.6; }
   50% { transform: scale(1.15); opacity: 1; }

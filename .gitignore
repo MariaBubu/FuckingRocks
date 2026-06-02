@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+.DS_Store
+.venv/
+data/exploratory/
+data/preprocessing_experiments/
+data/models/
+outputs/
+*.cache
+*.partial
+runs/detect/outputs/.DS_Store
+runs/detect/outputs/box_examples/
+runs/detect/outputs/box_training/*/train_batch*.jpg
+runs/detect/outputs/box_training/*/labels.jpg
+runs/detect/outputs/box_training/*/weights/last.pt
+yolo11n.pt

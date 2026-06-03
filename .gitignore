@@ -5,6 +5,7 @@ __pycache__/
 data/exploratory/
 data/preprocessing_experiments/
 data/models/
+data/crop_classifier_controlled_aug/dataset/
 outputs/
 *.cache
 *.partial

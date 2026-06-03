@@ -12,64 +12,64 @@
 
 :root {
   /* ==========================================================================
-     1. COLOR SYSTEM (DARK THEME - DEFAULT - High-Contrast Orange & Green)
+     1. COLOR SYSTEM (DARK THEME - DEFAULT - ColorHunt #1F2544 #474F7A #81689D #FFD0EC)
      ========================================================================== */
   
   /* Brand & Status Colors */
-  --color-primary: #f97316;             /* Vibrant Orange accent for high contrast and modern look */
-  --color-primary-rgb: 249, 115, 22;
-  --color-secondary: #22c55e;           /* Vibrant Emerald Green accent */
-  --color-secondary-rgb: 34, 197, 94;
-  --color-accent: #eab308;              /* Warm Yellow/Gold accent */
-  --color-accent-rgb: 234, 179, 8;
+  --color-primary: #FFD0EC;             /* ColorHunt pale pink highlight */
+  --color-primary-rgb: 255, 208, 236;
+  --color-secondary: #81689D;           /* ColorHunt muted violet */
+  --color-secondary-rgb: 129, 104, 157;
+  --color-accent: #474F7A;              /* ColorHunt slate indigo */
+  --color-accent-rgb: 71, 79, 122;
   
-  --color-success: #22c55e;
-  --color-warning: #eab308;
+  --color-success: #FFD0EC;
+  --color-warning: #81689D;
   --color-danger: #ef4444;
   
   /* Neutrals (Backgrounds, Cards, Dividers) */
-  --color-bg-base: #070312;             /* Deep dark obsidian purple-black */
-  --color-panel-bg: rgba(18, 12, 38, 0.78); /* Sleek glassmorphic card bg with purple tint */
-  --color-panel-border: rgba(249, 115, 22, 0.45); /* High-contrast orange outlines */
+  --color-bg-base: #1F2544;             /* ColorHunt deep navy */
+  --color-panel-bg: rgba(31, 37, 68, 0.82);
+  --color-panel-border: rgba(255, 208, 236, 0.42);
   
-  --color-text-title: #f8fafc;          /* High contrast title text */
-  --color-text-body: #b4afc6;           /* Soft lavender-gray body text */
-  --color-text-muted: #8e8aab;          /* Secondary metadata/labels */
-  --color-divider: rgba(249, 115, 22, 0.2);  /* Orange dividers */
+  --color-text-title: #FFD0EC;
+  --color-text-body: #d8d5ee;
+  --color-text-muted: #b5aacd;
+  --color-divider: rgba(255, 208, 236, 0.18);
 
   /* Specific UI Element Themes */
-  --color-dropzone-bg: rgba(255, 255, 255, 0.015);
-  --color-dropzone-border: rgba(249, 115, 22, 0.55); /* Orange outline for upload box */
-  --color-dropzone-hover-bg: rgba(249, 115, 22, 0.04);
+  --color-dropzone-bg: rgba(71, 79, 122, 0.16);
+  --color-dropzone-border: rgba(255, 208, 236, 0.5);
+  --color-dropzone-hover-bg: rgba(255, 208, 236, 0.08);
   --color-dropzone-hover-border: var(--color-primary);
 
-  --color-button-bg: #f8fafc;
-  --color-button-text: #0f172a;
-  --color-button-hover-bg: var(--color-primary);
-  --color-button-hover-text: #070312;
+  --color-button-bg: #FFD0EC;
+  --color-button-text: #1F2544;
+  --color-button-hover-bg: #81689D;
+  --color-button-hover-text: #ffffff;
 
   /* Gradient Background Configurations */
-  --bg-radial-gradient-1: radial-gradient(circle at 12% 15%, rgba(249, 115, 22, 0.16) 0%, transparent 45%);
-  --bg-radial-gradient-2: radial-gradient(circle at 88% 85%, rgba(34, 197, 94, 0.1) 0%, transparent 45%);
-  --bg-body-fallback: #070312;
+  --bg-radial-gradient-1: radial-gradient(circle at 12% 15%, rgba(255, 208, 236, 0.14) 0%, transparent 45%);
+  --bg-radial-gradient-2: radial-gradient(circle at 88% 85%, rgba(129, 104, 157, 0.22) 0%, transparent 45%);
+  --bg-body-fallback: #1F2544;
 
   /* Shadow Design */
   --shadow-card: 0 20px 50px rgba(0, 0, 0, 0.45);
   --shadow-premium: 0 4px 30px rgba(0, 0, 0, 0.35);
-  --title-gradient: linear-gradient(120deg, #ffb076 0%, #ffd49f 25%, #f97316 50%, #facc15 75%, #ffb076 100%);
+  --title-gradient: linear-gradient(120deg, #FFD0EC 0%, #ffffff 25%, #81689D 50%, #474F7A 75%, #FFD0EC 100%);
 
   /* Decorative floating blobs */
-  --blob-color-1: rgba(249, 115, 22, 0.18);
-  --blob-color-2: rgba(34, 197, 94, 0.14);
+  --blob-color-1: rgba(255, 208, 236, 0.16);
+  --blob-color-2: rgba(129, 104, 157, 0.22);
 
   /* Custom Bar Colors for Specific Classes */
-  --color-coral-bar-start: #22c55e;     /* Green start */
-  --color-coral-bar-end: #4ade80;       /* Green end */
-  --color-shell-bar-start: #f97316;     /* Orange start */
-  --color-shell-bar-end: #ff9d5c;       /* Orange end */
+  --color-coral-bar-start: #FFD0EC;
+  --color-coral-bar-end: #81689D;
+  --color-shell-bar-start: #474F7A;
+  --color-shell-bar-end: #FFD0EC;
   
   /* Outline color for confidence bar tracks */
-  --color-bar-track-border: rgba(249, 115, 22, 0.35);
+  --color-bar-track-border: rgba(255, 208, 236, 0.35);
 
   /* ==========================================================================
      2. TYPOGRAPHY
@@ -270,6 +270,7 @@ body {
   display: flex;
   flex-direction: column;
   min-width: 0; /* Crucial fix: prevents flex content overflow from stretching grid column width! */
+  overflow: visible;
 }
 
 
@@ -631,8 +632,7 @@ h2 {
 /* ==========================================================================
    BUTTONS & LOADER UI
    ========================================================================== */
-#classify-button,
-#detect-button {
+#analyze-button {
   width: 100%;
   border: none;
   background-color: var(--color-button-bg);
@@ -650,21 +650,18 @@ h2 {
   transition: all var(--transition-normal);
 }
 
-#classify-button:hover:not(:disabled),
-#detect-button:hover:not(:disabled) {
+#analyze-button:hover:not(:disabled) {
   background-color: var(--color-button-hover-bg);
   color: var(--color-button-hover-text);
   transform: translateY(-2px);
   box-shadow: 0 10px 20px -8px rgba(var(--color-primary-rgb), 0.3);
 }
 
-#classify-button:active:not(:disabled),
-#detect-button:active:not(:disabled) {
+#analyze-button:active:not(:disabled) {
   transform: translateY(0);
 }
 
-#classify-button:disabled,
-#detect-button:disabled {
+#analyze-button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
@@ -927,21 +924,27 @@ h2 {
   border-radius: var(--radius-md);
   border: 2px solid var(--color-panel-border); /* Slightly thicker outlines */
   box-shadow: var(--shadow-premium);
-  /* Sleek abstract floor limestone graphics */
   background: 
-    radial-gradient(ellipse at 35% 42%, rgba(var(--color-primary-rgb), 0.12) 0 14%, transparent 15%),
-    radial-gradient(ellipse at 65% 58%, rgba(var(--color-secondary-rgb), 0.1) 0 10%, transparent 11%),
-    repeating-linear-gradient(22deg, rgba(255, 255, 255, 0.015) 0 2px, transparent 2px 18px),
-    linear-gradient(135deg, rgba(var(--color-primary-rgb), 0.05) 0%, rgba(var(--color-secondary-rgb), 0.05) 100%);
+    radial-gradient(circle at 50% 46%, rgba(var(--color-primary-rgb), 0.16) 0 18%, transparent 19%),
+    repeating-linear-gradient(22deg, rgba(255, 255, 255, 0.035) 0 2px, transparent 2px 18px),
+    linear-gradient(135deg, rgba(31, 37, 68, 0.92), rgba(71, 79, 122, 0.82));
   position: relative;
   overflow: hidden;
+  display: grid;
+  place-items: center;
 }
 
 .sample-tile::after {
-  content: "";
+  content: "🔍";
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, transparent 40%, rgba(0, 0, 0, 0.3) 100%);
+  display: grid;
+  place-items: center;
+  color: var(--color-primary);
+  font-size: 76px;
+  line-height: 1;
+  text-shadow: 0 8px 24px rgba(31, 37, 68, 0.65);
+  background: linear-gradient(180deg, transparent 56%, rgba(31, 37, 68, 0.34) 100%);
 }
 
 .empty-state h2 {
@@ -1216,38 +1219,36 @@ h2 {
   flex-wrap: nowrap; /* Crucial fix: prevents tabs from wrapping to multiple lines */
   gap: 4px;
   overflow-x: auto;
+  overflow-y: hidden;
   width: 100%;
-  padding: 0 4px 0;
+  padding: 0 4px 10px;
   border-bottom: 2px solid var(--color-panel-border);
   scrollbar-width: thin;
-  scrollbar-color: rgba(var(--color-primary-rgb), 0.45) transparent;
+  scrollbar-color: rgba(var(--color-primary-rgb), 0.55) transparent;
 }
 
 /* Scrollbar styles for the tab bar */
 .tab-bar::-webkit-scrollbar {
-  height: 8px; /* Slightly taller height for modern spacing */
+  height: 8px;
 }
 
 .tab-bar::-webkit-scrollbar-track {
-  background: transparent; /* Sleek, clean transparent track */
+  background: transparent;
 }
 
 .tab-bar::-webkit-scrollbar-thumb {
-  background-color: rgba(var(--color-primary-rgb), 0.35); /* Beautiful, theme-compliant color */
-  border-radius: 10px;
-  border: 2.5px solid transparent; /* Creates padding around thumb for a floating pill look */
-  background-clip: padding-box; /* Fills only content box, keeping borders transparent */
-  transition: background-color var(--transition-fast);
-}
-
-.tab-bar::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(var(--color-primary-rgb), 0.8); /* Stronger highlight on hover */
-  border: 2.5px solid transparent;
+  background-color: rgba(var(--color-primary-rgb), 0.45);
+  border-radius: 999px;
+  border: 2px solid transparent;
   background-clip: padding-box;
 }
 
+.tab-bar::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(var(--color-primary-rgb), 0.8);
+}
+
 .tab-item {
-  flex-shrink: 0; /* Crucial fix: prevents tab items from shrinking below readability! */
+  flex: 0 0 168px;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1257,8 +1258,9 @@ h2 {
   border-bottom: 0;
   border-radius: 10px 10px 0 0;
   cursor: pointer;
-  max-width: 205px;
-  min-width: 120px;
+  width: 168px;
+  min-width: 168px;
+  max-width: 168px;
   transition: all var(--transition-fast);
   position: relative;
   transform: translateY(2px);
@@ -1295,6 +1297,8 @@ h2 {
 }
 
 .tab-name {
+  min-width: 0;
+  flex: 1;
   font-size: var(--fs-xs);
   font-weight: var(--fw-semibold);
   color: var(--color-text-body);
@@ -1360,6 +1364,7 @@ h2 {
 .tab-content {
   min-height: 0;
   flex: 1;
+  overflow: visible;
 }
 
 .tab-rerun-control {
@@ -1478,6 +1483,7 @@ html {
   height: 100%;
   gap: 24px;
   text-align: left;
+  overflow: visible;
 }
 
 .detection-header-summary {
@@ -1536,22 +1542,139 @@ html {
   transform: scale(1.02);
 }
 
-.failed-detection-wrap {
+.interactive-preview-wrap {
   position: relative;
-  background-color: rgba(0, 0, 0, 0.2);
-  border-radius: var(--radius-md);
-  border: 3px solid rgba(239, 68, 68, 0.75);
-  overflow: hidden;
+  background: linear-gradient(180deg, #fffaf6 0%, #ffe8dc 100%);
+  border-radius: 10px;
+  border: 1px solid rgba(255, 176, 134, 0.75);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.72);
+  overflow: visible;
   display: flex;
   align-items: center;
   justify-content: center;
-  aspect-ratio: 1.5;
   width: 100%;
+  min-height: 260px;
+  max-height: min(620px, 60vh);
+  padding: 8px;
+  margin-top: 18px;
+}
+
+.interactive-preview-wrap img {
+  max-width: 100%;
+  max-height: calc(min(620px, 60vh) - 16px);
+  object-fit: contain;
+  display: block;
+  border-radius: 4px;
+}
+
+.interactive-image-stage {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 100%;
+  max-height: calc(min(620px, 60vh) - 16px);
+}
+
+.interactive-image-stage img {
+  display: block;
+  max-width: 100%;
+  max-height: calc(min(620px, 60vh) - 16px);
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
+
+.interactive-box-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.interactive-box {
+  position: absolute;
+  --box-color: #00ff5a;
+  --box-fill: #00ff5a;
+  --box-glow: rgba(0, 255, 90, 0.35);
+  --box-active: #a7ffcb;
+  border: 4px solid var(--box-color);
+  background: transparent;
+  box-shadow: 0 0 0 2px rgba(0, 27, 11, 0.9), 0 0 16px var(--box-glow);
+  cursor: pointer;
+  pointer-events: auto;
+  z-index: 2;
+  padding: 0;
+}
+
+.interactive-box.is-coral {
+  --box-color: #00ff5a;
+  --box-fill: #00ff5a;
+  --box-glow: rgba(0, 255, 90, 0.35);
+  --box-active: #a7ffcb;
+}
+
+.interactive-box.is-shell {
+  --box-color: #ff4fb3;
+  --box-fill: #ff8fd1;
+  --box-glow: rgba(255, 79, 179, 0.38);
+  --box-active: #ffd0ec;
+}
+
+.interactive-box:hover,
+.interactive-box.is-active {
+  z-index: 30;
+  border-color: var(--box-active);
+  box-shadow: 0 0 0 3px rgba(0, 27, 11, 0.95), 0 0 26px var(--box-glow);
+}
+
+.interactive-box-label {
+  position: absolute;
+  left: -4px;
+  top: -31px;
+  max-width: min(320px, 85vw);
+  padding: 4px 8px;
+  color: #001b0b;
+  background: var(--box-fill);
+  border: 2px solid rgba(0, 27, 11, 0.85);
+  border-radius: 4px 4px 4px 0;
+  font-size: clamp(12px, 1.15vw, 17px);
+  font-weight: var(--fw-extrabold);
+  line-height: 1.05;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.interactive-box:hover .interactive-box-label,
+.interactive-box.is-active .interactive-box-label {
+  background: var(--box-active);
+  z-index: 31;
+  overflow: visible;
+}
+
+.failed-detection-wrap {
+  position: relative;
+  background: linear-gradient(180deg, #fffaf6 0%, #ffe8dc 100%);
+  border-radius: 10px;
+  border: 1px solid rgba(239, 68, 68, 0.55);
+  overflow: visible;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 260px;
+  max-height: min(620px, 60vh);
+  padding: 8px;
+  margin-top: 18px;
 }
 
 .failed-detection-wrap img {
   max-width: 100%;
-  max-height: 100%;
+  max-height: calc(min(620px, 60vh) - 16px);
+  width: auto;
+  height: auto;
   object-fit: contain;
   opacity: 0.88;
 }

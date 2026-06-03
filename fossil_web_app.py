@@ -36,7 +36,7 @@ from string import Template
 from urllib.parse import unquote
 
 ROOT = Path(__file__).resolve().parent
-MODEL_DIR = ROOT / "data/preprocessing_experiments/original_enhanced/model"
+MODEL_DIR = ROOT / "data/crop_classifier_controlled_aug/model"
 MODEL_PATH = MODEL_DIR / "best_resnet18.pt"
 ONNX_PATH = MODEL_DIR / "best_resnet18.onnx"
 CLASSES_PATH = MODEL_DIR / "classes.json"
@@ -48,6 +48,16 @@ PORT = 5050
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 
 CLASS_DISPLAY = {
+    "Coral": {
+        "label": "Coral fossil",
+        "short": "Coral",
+        "description": "The model thinks this cropped fossil is closer to the coral examples it saw during training.",
+    },
+    "Shell": {
+        "label": "Brachiopod fossil",
+        "short": "Brachiopod",
+        "description": "The model thinks this cropped fossil is closer to the brachiopod/shell examples it saw during training.",
+    },
     "FuckingCorals": {
         "label": "Coral fossil",
         "short": "Coral",
@@ -355,6 +365,9 @@ def detect_and_classify_multiple_fossils(image: Image.Image, confidence: float =
             "confidence_threshold": confidence,
             "message": f"No fossil boxes found above the {confidence:.2f} confidence threshold.",
             "fossils": [],
+            "image_width": image.width,
+            "image_height": image.height,
+            "image_url": preview_data_url(image),
             "annotated_image_url": preview_data_url(image),
         }
 
@@ -390,6 +403,19 @@ def detect_and_classify_multiple_fossils(image: Image.Image, confidence: float =
         xmin, ymin, xmax, ymax = box
 
         cropped = image.crop((xmin, ymin, xmax, ymax))
+        try:
+            classification = classify_image(cropped)
+            classification_short = classification["ranked"][0]["display"]
+            classification_confidence = classification["confidence_percent"]
+        except Exception as exc:
+            classification = {
+                "label": "Classification unavailable",
+                "description": f"Could not classify this crop: {exc}",
+                "confidence_percent": 0,
+                "ranked": [],
+            }
+            classification_short = "Unclassified"
+            classification_confidence = 0
         color = "#00ff5a"
         shadow_color = "#001b0b"
 
@@ -405,7 +431,7 @@ def detect_and_classify_multiple_fossils(image: Image.Image, confidence: float =
             )
 
         try:
-            label = f"Fossil {fossil_id}  {det['score']:.2f}"
+            label = f"Fossil {fossil_id}  {classification_short} {classification_confidence:.0f}%"
             label_bbox = draw.textbbox((0, 0), label, font=label_font)
             label_width = label_bbox[2] - label_bbox[0]
             label_height = label_bbox[3] - label_bbox[1]
@@ -424,12 +450,16 @@ def detect_and_classify_multiple_fossils(image: Image.Image, confidence: float =
             "id": fossil_id,
             "score": float(det["score"]),
             "bbox": [xmin, ymin, xmax, ymax],
+            "classification": classification,
             "cropped_image_url": preview_data_url(cropped)
         })
 
     return {
         "success": True,
         "confidence_threshold": confidence,
+        "image_width": image.width,
+        "image_height": image.height,
+        "image_url": preview_data_url(image),
         "fossils": fossils_list,
         "annotated_image_url": preview_data_url(annotated)
     }
@@ -454,8 +484,8 @@ def render_empty_state() -> str:
     return """
     <div class="empty-state">
       <div class="sample-tile"></div>
-      <h2>Upload an image to classify it.</h2>
-      <p>The app will run the current best local model and return a coral or brachiopod prediction with confidence.</p>
+      <h2>Upload an image to analyze it.</h2>
+      <p>The app will draw fossil boxes, then classify every detected crop as coral or brachiopod.</p>
     </div>
     """
 

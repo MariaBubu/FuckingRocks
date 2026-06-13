@@ -45,7 +45,7 @@ YOLO_BOX_MODEL_PATH = (
     / "runs/detect/outputs/box_training/yolo11n_fossil_first_run/weights/best.pt"
 )
 PORT = 5050
-MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+MAX_UPLOAD_BYTES = 75 * 1024 * 1024
 
 CLASS_DISPLAY = {
     "Coral": {
@@ -572,7 +572,7 @@ def _parse_multipart_form(handler):
         field_name = headers_section.split('name="')[1].split('"')[0]
         if 'filename="' in headers_section:
             filename = headers_section.split('filename="')[1].split('"')[0]
-            files[field_name] = (content, filename)
+            files.setdefault(field_name, []).append((content, filename))
         else:
             fields[field_name] = content.decode("utf-8", errors="replace")
 
@@ -581,7 +581,11 @@ def _parse_multipart_form(handler):
 
 def _parse_multipart(handler):
     files, _fields = _parse_multipart_form(handler)
-    return files.get("image", (None, None))
+    return files.get("image", [(None, None)])[0]
+
+
+def _first_uploaded_file(files: dict, field_name: str = "image"):
+    return files.get(field_name, [(None, None)])[0]
 
 
 class FossilHandler(BaseHTTPRequestHandler):
@@ -601,13 +605,13 @@ class FossilHandler(BaseHTTPRequestHandler):
 
         if self.path == "/detect":
             if content_length > MAX_UPLOAD_BYTES:
-                self.send_json({"error": "That image is too large. Limit is 20 MB."})
+                self.send_json({"success": False, "error": "That image is too large. Limit is 75 MB."})
                 return
             try:
                 files, fields = _parse_multipart_form(self)
-                image_bytes, filename = files.get("image", (None, None))
+                image_bytes, filename = _first_uploaded_file(files)
                 if image_bytes is None or not filename:
-                    self.send_json({"error": "Please select an image file."})
+                    self.send_json({"success": False, "error": "Please select an image file."})
                     return
                 try:
                     confidence = float(fields.get("confidence", "0.25"))
@@ -624,12 +628,12 @@ class FossilHandler(BaseHTTPRequestHandler):
 
         if self.path == "/classify":
             if content_length > MAX_UPLOAD_BYTES:
-                self.send_json({"error": "That image is too large. Limit is 20 MB."})
+                self.send_json({"success": False, "error": "That image is too large. Limit is 75 MB."})
                 return
             try:
                 image_bytes, filename = _parse_multipart(self)
                 if image_bytes is None or not filename:
-                    self.send_json({"error": "Please select an image file."})
+                    self.send_json({"success": False, "error": "Please select an image file."})
                     return
                 from PIL import Image
 
@@ -650,7 +654,7 @@ class FossilHandler(BaseHTTPRequestHandler):
             return
 
         if content_length > MAX_UPLOAD_BYTES:
-            self.send_html(render_page(error="That image is too large. Try a file under 20 MB."))
+            self.send_html(render_page(error="That image is too large. Try a file under 75 MB."))
             return
 
         try:

@@ -10,3 +10,4 @@ openpyxl
 Flask
 onnx
 onnxruntime
+ultralytics

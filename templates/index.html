@@ -85,6 +85,7 @@
       <header class="app-header">
         <div class="logo-wrap">
           <span class="product-name">Fossils or Gum?</span>
+          <span class="header-tagline">Find and classify fossils</span>
         </div>
         <div class="header-actions">
           <span id="model-status" class="status-badge">$model_status_message</span>
@@ -94,18 +95,12 @@
 
       <section class="workspace">
         <div class="panel upload-panel">
-          <div class="title-row">
-            <p class="eyebrow">Limestone floor fossil AI</p>
-            <h1>Find and classify fossils</h1>
-          </div>
-
           <form id="analysis-form" method="post" enctype="multipart/form-data" class="upload-form tool-form is-active">
             <label class="drop-zone" for="image" id="drop-zone-label">
               <input id="image" name="image" type="file" accept="image/*" multiple required>
-              <div class="drop-icon-container"><span class="drop-icon">🔍</span></div>
-              <span class="drop-title">Upload tile or fossil photo</span>
-              <span class="drop-copy">The model will draw boxes and classify each detected fossil</span>
-              <span class="drop-formats">JPG, PNG, TIFF, or HEIC</span>
+              <span class="drop-title">Upload tile photos</span>
+              <span class="drop-copy">Drag images here or click to browse.</span>
+              <span class="drop-formats">JPG, PNG, TIFF, HEIC</span>
               <span id="file-feedback" class="file-feedback" aria-live="polite"></span>
             </label>
             <button id="analyze-button" type="submit">Analyze fossils</button>
@@ -133,6 +128,7 @@
       const analyzeButton = document.getElementById("analyze-button");
       const fileFeedback = document.getElementById("file-feedback");
       const DEFAULT_DETECTOR_CONFIDENCE = "0.25";
+      const MAX_UPLOAD_BYTES = 75 * 1024 * 1024;
       let tabs = [];
       let activeTabId = null;
 
@@ -165,7 +161,12 @@
           button.textContent = baseText;
           return;
         }
-        feedback.textContent = files.length === 1 ? `✓ ${files[0].name} added` : `✓ ${files.length} images added`;
+        const oversized = Array.from(files).filter((file) => file.size > MAX_UPLOAD_BYTES);
+        if (oversized.length) {
+          feedback.textContent = `${oversized.length} image${oversized.length === 1 ? "" : "s"} over 75 MB will be skipped`;
+        } else {
+          feedback.textContent = files.length === 1 ? `✓ ${files[0].name} added` : `✓ ${files.length} images added`;
+        }
         feedback.classList.add("is-visible");
         button.textContent = files.length > 1 && !baseText.endsWith("s") ? `${baseText}s` : baseText;
       };
@@ -207,7 +208,7 @@
         `;
       }).join("");
 
-      const renderInteractivePreview = (data) => {
+      const renderInteractivePreview = (data, selectedFossilId = 1) => {
         const width = data.image_width || 1;
         const height = data.image_height || 1;
         const overlays = data.fossils.map((fossil, index) => {
@@ -223,10 +224,10 @@
           const classConfidence = fossil.classification?.confidence_percent || 0;
           return `
             <button
-              class="interactive-box ${fossilClass} ${index === 0 ? "is-active" : ""}"
+              class="interactive-box ${fossilClass} ${fossil.id === selectedFossilId ? "is-active" : ""}"
               type="button"
               data-fossil-id="${fossil.id}"
-              aria-label="Bring Fossil ${fossil.id} forward"
+              aria-label="Show Fossil ${fossil.id} details"
               style="left:${left}%; top:${top}%; width:${boxWidth}%; height:${boxHeight}%;"
             >
               <span class="interactive-box-label">F${fossil.id} ${escapeHTML(tagName)} ${classConfidence.toFixed(0)}%</span>
@@ -239,6 +240,73 @@
               <img src="${data.image_url || data.annotated_image_url}" alt="Image with interactive fossil boxes">
               <div class="interactive-box-layer">${overlays}</div>
             </div>
+          </div>
+        `;
+      };
+
+      const predictionExplanation = (fossil) => {
+        const top = fossil.classification?.ranked?.[0];
+        const className = (top?.class_name || top?.display || "").toLowerCase();
+        if (className.includes("coral")) {
+          return "The crop is being read as coral-like because the strongest visual signal resembles clustered, branching, or honeycomb-style texture rather than a single shell outline. This is a model cue, not a palaeontological proof.";
+        }
+        if (className.includes("shell")) {
+          return "The crop is being read as shell-like because the strongest visual signal resembles a compact curved form, ribbing, or a brachiopod-style outline. This is a model cue, not a palaeontological proof.";
+        }
+        return "The model found a fossil-shaped crop, but the class evidence is weak or unavailable for this detection.";
+      };
+
+      const renderFossilCard = (fossil, variant = "selected") => {
+        const label = fossil.classification?.label || "Classification unavailable";
+        const confidence = fossil.classification?.confidence_percent || 0;
+        const explanation = predictionExplanation(fossil);
+        return `
+          <article class="specimen-card ${variant === "selected" ? "is-selected-card" : ""}" data-fossil-card-id="${fossil.id}">
+            <div class="specimen-top">
+              <strong>Fossil ${fossil.id}</strong>
+              <span class="tiny-pill">${(fossil.score * 100).toFixed(0)}% box confidence</span>
+            </div>
+            <img src="${fossil.cropped_image_url}" alt="Fossil ${fossil.id} crop">
+            <div class="specimen-classification">
+              <div class="classification-title-row">
+                <p class="eyebrow">Classification</p>
+                <button class="why-button" type="button" data-explain-fossil-id="${fossil.id}" aria-expanded="false" title="Show prediction explanation">?</button>
+                <p class="prediction-explanation" data-explanation-for="${fossil.id}" hidden>${escapeHTML(explanation)}</p>
+              </div>
+              <h3>${escapeHTML(label)}</h3>
+              <p class="description">
+                ${confidence.toFixed(1)}% classifier confidence
+              </p>
+              ${fossil.classification?.ranked?.length ? `<div class="bars compact-bars">${renderBars(fossil.classification.ranked)}</div>` : ""}
+            </div>
+          </article>
+        `;
+      };
+
+      const renderDetectionResult = (data, selectedFossilId = 1, showAll = false) => {
+        const selected = data.fossils.find((fossil) => fossil.id === selectedFossilId) || data.fossils[0];
+        const fossilCards = data.fossils.map((fossil) => renderFossilCard(fossil, "grid")).join("");
+        return `
+          <div class="detection-result-container">
+            <div class="detection-header-summary">
+              <h2>Found and classified ${data.fossils.length} fossil boxes</h2>
+              <p class="description">Click a box to inspect that fossil.</p>
+            </div>
+            <div class="detection-main-layout ${showAll ? "is-expanded-all" : ""}">
+              <div class="detection-image-column">
+                ${renderInteractivePreview(data, selected.id)}
+              </div>
+              ${showAll ? "" : `<aside class="selected-fossil-panel" aria-live="polite">
+                ${renderFossilCard(selected, "selected")}
+                <div class="selected-card-actions"><button class="display-all-button" type="button" data-toggle-all-fossils aria-expanded="false">Display all</button></div>
+              </aside>`}
+            </div>
+            <section class="all-fossils-section ${showAll ? "is-expanded" : "is-collapsed"}" ${showAll ? "" : "hidden"}>
+              <div class="all-fossils-toolbar">
+                <button class="display-all-button hide-all-button" type="button" data-toggle-all-fossils aria-expanded="true">Hide</button>
+              </div>
+              <div class="specimens-grid all-specimens-grid">${fossilCards}</div>
+            </section>
           </div>
         `;
       };
@@ -373,13 +441,71 @@
         resultPanel.querySelectorAll(".interactive-box").forEach((box) => {
           box.addEventListener("click", (event) => {
             event.stopPropagation();
-            const layer = box.closest(".interactive-box-layer");
-            if (!layer) return;
-            layer.querySelectorAll(".interactive-box").forEach((item) => item.classList.remove("is-active"));
-            box.classList.add("is-active");
+            const active = tabs.find((tab) => tab.id === activeTabId);
+            if (!active?.resultData) return;
+            const fossilId = Number(box.dataset.fossilId);
+            tabs = tabs.map((tab) => {
+              if (tab.id !== activeTabId) return tab;
+              return {
+                ...tab,
+                selectedFossilId: fossilId,
+                html: renderDetectionResult(tab.resultData, fossilId, tab.showAllFossils),
+              };
+            });
+            renderTabs();
+          });
+        });
+        resultPanel.querySelectorAll("[data-toggle-all-fossils]").forEach((button) => {
+          button.addEventListener("click", () => {
+            let willShowAll = false;
+            tabs = tabs.map((tab) => {
+              if (tab.id !== activeTabId || !tab.resultData) return tab;
+              const showAll = !tab.showAllFossils;
+              willShowAll = showAll;
+              return {
+                ...tab,
+                showAllFossils: showAll,
+                html: renderDetectionResult(tab.resultData, tab.selectedFossilId || 1, showAll),
+              };
+            });
+            renderTabs();
+            if (willShowAll) {
+              requestAnimationFrame(() => {
+                resultPanel.querySelector(".all-fossils-section")?.scrollIntoView({
+                  behavior: "smooth",
+                  block: "start",
+                });
+              });
+            }
+          });
+        });
+        resultPanel.querySelectorAll("[data-explain-fossil-id]").forEach((button) => {
+          button.addEventListener("click", (event) => {
+            event.stopPropagation();
+            const card = button.closest(".specimen-card");
+            if (!card) return;
+            const explanation = card.querySelector(`[data-explanation-for="${button.dataset.explainFossilId}"]`);
+            if (!explanation) return;
+            const isHidden = explanation.hasAttribute("hidden");
+            resultPanel.querySelectorAll(".prediction-explanation:not([hidden])").forEach((panel) => {
+              if (panel !== explanation) {
+                panel.hidden = true;
+                panel.closest(".specimen-card")?.querySelector("[data-explain-fossil-id]")?.setAttribute("aria-expanded", "false");
+              }
+            });
+            explanation.toggleAttribute("hidden", !isHidden);
+            button.setAttribute("aria-expanded", String(isHidden));
           });
         });
       };
+
+      document.addEventListener("click", (event) => {
+        if (event.target.closest(".prediction-explanation") || event.target.closest("[data-explain-fossil-id]")) return;
+        resultPanel.querySelectorAll(".prediction-explanation:not([hidden])").forEach((panel) => {
+          panel.hidden = true;
+          panel.closest(".specimen-card")?.querySelector("[data-explain-fossil-id]")?.setAttribute("aria-expanded", "false");
+        });
+      });
 
       const addLoadingTabs = (files, kind, message, meta) => {
         const newTabs = Array.from(files).map((file) => ({
@@ -411,6 +537,10 @@
         formData.append("confidence", confidence);
         try {
           const response = await fetch("/detect", { method: "POST", body: formData, signal: controller.signal });
+          const contentType = response.headers.get("content-type") || "";
+          if (!contentType.includes("application/json")) {
+            throw new Error(`Server returned ${response.status} instead of a detection result.`);
+          }
           const data = await response.json();
           if (!data.success) throw new Error(data.error || "Detection failed.");
           if (data.no_detections || !data.fossils.length) {
@@ -433,38 +563,13 @@
             });
             return;
           }
-          const fossilCards = data.fossils.map((fossil) => `
-            <div class="specimen-card">
-              <div class="specimen-top">
-                <strong>Fossil ${fossil.id}</strong>
-                <span class="tiny-pill">${(fossil.score * 100).toFixed(0)}% box confidence</span>
-              </div>
-              <img src="${fossil.cropped_image_url}" alt="Fossil ${fossil.id} crop">
-              <div class="specimen-classification">
-                <p class="eyebrow">Classification</p>
-                <h3>${escapeHTML(fossil.classification?.label || "Classification unavailable")}</h3>
-                <p class="description">
-                  ${(fossil.classification?.confidence_percent || 0).toFixed(1)}% classifier confidence ·
-                  ${(fossil.score * 100).toFixed(1)}% box confidence
-                </p>
-                ${fossil.classification?.ranked?.length ? `<div class="bars compact-bars">${renderBars(fossil.classification.ranked)}</div>` : ""}
-              </div>
-            </div>
-          `).join("");
           setTabResult(tabId, {
             status: "ready",
             confidence,
-            html: `
-              <div class="detection-result-container">
-                <div class="detection-header-summary">
-                  <p class="eyebrow">Boxing + classification</p>
-                  <h2>Found and classified ${data.fossils.length} fossil boxes</h2>
-                  <p class="description">Detector confidence threshold: ${(Number(confidence) * 100).toFixed(0)}%. Each crop is classified as coral or brachiopod.</p>
-                </div>
-                ${renderInteractivePreview(data)}
-                <div class="specimens-grid">${fossilCards}</div>
-              </div>
-            `,
+            resultData: data,
+            selectedFossilId: data.fossils[0].id,
+            showAllFossils: false,
+            html: renderDetectionResult(data, data.fossils[0].id, false),
           });
         } catch (error) {
           setTabResult(tabId, {
@@ -480,18 +585,29 @@
 
       analysisForm.addEventListener("submit", async (event) => {
         event.preventDefault();
-        if (!imageInput.files.length) return;
+        const selectedFiles = Array.from(imageInput.files || []);
+        if (!selectedFiles.length) return;
         analyzeButton.disabled = true;
         analyzeButton.textContent = "Analyzing fossils...";
         const confidence = DEFAULT_DETECTOR_CONFIDENCE;
         const jobs = addLoadingTabs(
-          imageInput.files,
+          selectedFiles,
           "detect",
           "Drawing fossil boxes and classifying crops...",
           `Threshold ${Math.round(Number(confidence) * 100)}%`
         );
         for (let index = 0; index < jobs.length; index += 1) {
-          await detectOne(imageInput.files[index], jobs[index].id, confidence);
+          const file = selectedFiles[index];
+          if (file.size > MAX_UPLOAD_BYTES) {
+            setTabResult(jobs[index].id, {
+              status: "error",
+              confidence,
+              error: "This image is larger than the 75 MB upload limit.",
+              meta: `${file.name} is ${(file.size / (1024 * 1024)).toFixed(1)} MB`,
+            });
+            continue;
+          }
+          await detectOne(file, jobs[index].id, confidence);
         }
         try {
           imageInput.value = "";

@@ -465,19 +465,34 @@ def detect_and_classify_multiple_fossils(image: Image.Image, confidence: float =
     }
 
 
-def render_page(result=None, image_url=None, error=None) -> bytes:
-    template = Template((ROOT / "templates" / "index.html").read_text(encoding="utf-8"))
-    result_html = render_result(result, image_url) if result else render_empty_state()
-    error_html = f'<div class="error">{html.escape(error)}</div>' if error else ""
+def render_template(template_name: str, **values) -> bytes:
+    template = Template((ROOT / "templates" / template_name).read_text(encoding="utf-8"))
     page = template.safe_substitute(
         stylesheet_url="/static/styles.css",
+        model_status_message=html.escape(model_status()["message"]),
+        **values,
+    )
+    return page.encode("utf-8")
+
+
+def render_landing_page() -> bytes:
+    return render_template("landing.html")
+
+
+def render_edu_page() -> bytes:
+    return render_template("edu.html")
+
+
+def render_page(result=None, image_url=None, error=None) -> bytes:
+    result_html = render_result(result, image_url) if result else render_empty_state()
+    error_html = f'<div class="error">{html.escape(error)}</div>' if error else ""
+    return render_template(
+        "index.html",
         error_html=error_html,
         result_html=result_html,
         model_name="original + enhanced ResNet18",
         model_path="data/preprocessing_experiments/original_enhanced/model/best_resnet18.pt",
-        model_status_message=html.escape(model_status()["message"]),
     )
-    return page.encode("utf-8")
 
 
 def render_empty_state() -> str:
@@ -592,7 +607,11 @@ class FossilHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = unquote(self.path.split("?", 1)[0])
         if path == "/":
+            self.send_html(render_landing_page())
+        elif path == "/detector":
             self.send_html(render_page())
+        elif path == "/edu":
+            self.send_html(render_edu_page())
         elif path == "/model-status":
             self.send_json(model_status())
         elif path.startswith("/static/"):

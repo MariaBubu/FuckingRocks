@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Fossils or Gum?</title>
+    <link rel="stylesheet" href="$stylesheet_url">
+  </head>
+  <body>
+    <main class="shell">
+      <header class="app-header">
+        <div class="logo-wrap">
+          <span class="product-name">Fossils or Gum?</span>
+        </div>
+        <div class="header-actions">
+          <span id="model-status" class="status-badge">$model_status_message</span>
+          <button id="theme-toggle" class="theme-toggle-btn" aria-label="Toggle light/dark theme" type="button">◐</button>
+        </div>
+      </header>
+
+      <section class="panel home-panel" aria-label="Choose a section">
+        <a class="home-action-card detector-card" href="/detector">
+          <span class="home-action-icon" aria-hidden="true">🔍</span>
+          <span class="home-action-title">Open detector/classifier</span>
+        </a>
+        <a class="home-action-card edu-card" href="/edu">
+          <span class="home-action-icon" aria-hidden="true">👓</span>
+          <span class="home-action-title">Go to edu-section</span>
+        </a>
+      </section>
+    </main>
+
+    <script>
+      const setTheme = (theme) => {
+        document.documentElement.setAttribute("data-theme", theme);
+        localStorage.setItem("theme", theme);
+      };
+      setTheme(localStorage.getItem("theme") || "dark");
+      document.getElementById("theme-toggle").addEventListener("click", () => {
+        setTheme(document.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light");
+      });
+    </script>
+  </body>
+</html>

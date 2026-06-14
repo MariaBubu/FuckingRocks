@@ -26,7 +26,7 @@
     <main class="shell">
       <header class="app-header">
         <div class="logo-wrap">
-          <span class="header-tagline standalone-title">Diagenesis Engine</span>
+          <span class="header-tagline standalone-title">Educational Hub</span>
         </div>
         <div class="header-actions">
           <div class="model-info-dropdown-container">
@@ -53,58 +53,12 @@
           <button id="theme-toggle" class="theme-toggle-btn" aria-label="Toggle light/dark theme" type="button">◐</button>
         </div>
       </header>
-
-      <section class="panel edu-panel" style="display: flex; flex-direction: row; gap: 40px; align-items: stretch; height: calc(100vh - 180px); min-height: 600px;">
-        
-        <!-- Left Side: Canvas -->
-        <div class="canvas-wrapper" id="r3f-root" style="flex: 1.4; border-radius: 12px; overflow: hidden; background: #1c1e26; border: 1px solid var(--color-panel-border); box-shadow: inset 0 0 40px rgba(0,0,0,0.5);">
-          <!-- React Three Fiber will mount here -->
-        </div>
-
-        <!-- Right Side: Text, Legend, and Controls -->
-        <div class="edu-sidebar" style="flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 32px;">
-          
-          <div class="edu-header">
-            <h1 style="font-size: 3rem; line-height: 1.1; font-weight: 800; letter-spacing: -0.04em;">The Diagenesis Engine</h1>
-            <p class="description" style="margin-top: 16px; font-size: 1.1rem; line-height: 1.6; color: var(--color-text-muted);">
-              Simulate the geological transformation of Calcium Carbonate (CaCO<sub>3</sub>) from a chaotic fossil micro-structure into a perfect macrocrystalline gemstone (Calcite).
-            </p>
-          </div>
-
-          <!-- Legend -->
-          <div class="edu-legend" style="background: rgba(255,255,255,0.03); padding: 20px; border-radius: 12px; border: 1px solid var(--color-panel-border);">
-            <h4 style="margin-bottom: 12px; font-weight: 600; font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-text-muted);">Legend</h4>
-            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
-              <div style="width: 16px; height: 16px; border-radius: 50%; background: linear-gradient(135deg, #e0ffff, #8a9ba8);"></div>
-              <span style="font-size: 0.95rem;"><strong>Calcium Carbonate (CaCO<sub>3</sub>)</strong>:<br/>Main lattice atoms.</span>
-            </div>
-            <div style="display: flex; align-items: center; gap: 12px;">
-              <div style="width: 16px; height: 16px; border-radius: 50%; background: #ff3366; box-shadow: 0 0 8px rgba(255,51,102,0.6);"></div>
-              <span style="font-size: 0.95rem;"><strong>Organic Impurities</strong>:<br/>Trapped matter that fades during diagenesis.</span>
-            </div>
-          </div>
-          
-          <!-- Crystal System Outline Toggle -->
-          <div style="display: flex; gap: 16px; align-items: center; background: rgba(255,255,255,0.03); padding: 20px; border-radius: 12px; border: 1px solid var(--color-panel-border);">
-            <button id="toggle-outline-btn" style="background: var(--color-primary); color: #fff; border: none; padding: 12px 24px; border-radius: 8px; font-weight: 600; cursor: pointer; box-shadow: 0 4px 12px rgba(255,179,71,0.2); white-space: nowrap;">Show Trigonal Shape</button>
-            <span style="font-size: 0.9rem; color: var(--color-text-muted); line-height: 1.4;">Removes visual clutter and outlines the macroscopic geometry of the formation.</span>
-          </div>
-          
-          <!-- Controls -->
-          <div class="controls-wrapper" style="background: rgba(255,255,255,0.03); padding: 20px; border-radius: 12px; border: 1px solid var(--color-panel-border);">
-            <div style="display: flex; justify-content: space-between; margin-bottom: 12px;">
-              <span class="label-text" style="font-weight: var(--fw-bold);">Diagenesis Progress:</span>
-              <span class="label-value" id="progress-value" style="font-family: var(--font-mono); color: var(--color-primary);">0%</span>
-            </div>
-            <input type="range" id="diagenesis-slider" min="0" max="100" value="0" style="width: 100%; cursor: pointer;">
-            
-            <div class="phase-markers" style="display: flex; justify-content: space-between; margin-top: 8px; font-size: 12px; color: var(--color-text-muted);">
-              <span>State A: Biogenic Fossil</span>
-              <span>State B: Gemstone Lattice</span>
-            </div>
-          </div>
-          
-        </div>
+      <section class="panel home-panel" aria-label="Educational Resources" style="display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 50vh;">
+        <a href="/diagenesis" style="display: flex; flex-direction: column; align-items: center; text-decoration: none; gap: 16px; transition: transform 0.2s;" onmouseover="this.style.transform='translateY(-4px)'" onmouseout="this.style.transform='translateY(0)'">
+          <span class="home-action-icon" aria-hidden="true" style="font-size: 3rem; margin: 0; box-shadow: 0 8px 24px rgba(0,0,0,0.05);">💎</span>
+          <span style="font-size: 1.4rem; font-weight: 700; color: var(--color-text-title);">Diagenesis Engine</span>
+          <span style="font-size: 1rem; color: var(--color-text-muted);">Interactive 3D simulation</span>
+        </a>
       </section>
     </main>
 
@@ -156,6 +110,5 @@
       };
       refreshModelStatus();
     </script>
-    <script type="text/babel" data-type="module" src="/static/diagenesis.jsx"></script>
   </body>
 </html>

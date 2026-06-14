@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Edu-page</title>
+    <link rel="stylesheet" href="$stylesheet_url">
+
+    <!-- Import Map for React & Three.js -->
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18.2.0",
+        "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+        "three": "https://esm.sh/three@0.160.0",
+        "@react-three/fiber": "https://esm.sh/@react-three/fiber@8.15.12?external=react,react-dom,three",
+        "@react-three/drei": "https://esm.sh/@react-three/drei@9.96.1?external=react,react-dom,three,@react-three/fiber"
+      }
+    }
+    </script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+      .toggle-action-btn {
+        background: transparent;
+        color: var(--color-text);
+        border: 1px solid transparent;
+        padding: 8px 16px;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 1.05rem;
+        cursor: pointer;
+        white-space: nowrap;
+        transition: all 0.2s;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        outline: none;
+      }
+      .toggle-action-btn:focus {
+        outline: none;
+      }
+      .toggle-circle {
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        border: 2px solid var(--color-text-muted);
+        transition: all 0.2s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .toggle-action-btn:hover {
+        background: rgba(255, 255, 255, 0.03);
+      }
+      .toggle-action-btn.active {
+        color: var(--color-primary);
+      }
+      .toggle-action-btn.active .toggle-circle {
+        border-color: var(--color-primary);
+        background: var(--color-primary);
+        box-shadow: 0 0 8px rgba(255,179,71,0.4);
+      }
+      .toggle-action-btn.active .toggle-circle::after {
+        content: '';
+        width: 4px;
+        height: 8px;
+        border: solid #fff;
+        border-width: 0 2px 2px 0;
+        transform: rotate(45deg);
+        margin-bottom: 2px;
+      }
+      
+      .clickable-title-word {
+        color: var(--color-primary);
+        text-decoration: underline;
+        text-decoration-style: dotted;
+        text-underline-offset: 4px;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .clickable-title-word:hover {
+        color: var(--color-text);
+        text-decoration-style: solid;
+      }
+      html {
+        scroll-behavior: smooth;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="decor-blob decor-blob-1" aria-hidden="true"></div>
+    <div class="decor-blob decor-blob-2" aria-hidden="true"></div>
+    <main class="shell">
+      <header class="app-header">
+        <div class="logo-wrap">
+          <span class="header-tagline standalone-title">Diagenesis Engine</span>
+        </div>
+        <div class="header-actions">
+          <div class="model-info-dropdown-container">
+            <button id="model-status-btn" class="header-icon-btn" aria-label="Show Model Status" type="button">
+              <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                <line x1="8" y1="21" x2="16" y2="21"></line>
+                <line x1="12" y1="17" x2="12" y2="21"></line>
+              </svg>
+            </button>
+            <div id="model-status-popover" class="model-info-popover">
+              <div class="popover-header">
+                <h3>System Status</h3>
+              </div>
+              <div class="popover-body">
+                <div class="info-row">
+                  <span class="info-label">Model status:</span>
+                  <span id="model-status-popover-text" class="status-indicator-value">Checking...</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <a class="header-link-button" href="/edu">Back to Edu</a>
+          <button id="theme-toggle" class="theme-toggle-btn" aria-label="Toggle light/dark theme" type="button">◐</button>
+        </div>
+      </header>
+
+      <section class="panel edu-panel" style="display: flex; flex-direction: row; gap: 40px; align-items: stretch; height: calc(100vh - 180px); min-height: 600px;">
+        
+        <!-- Left Side: Canvas -->
+        <div class="canvas-wrapper" id="r3f-root" style="flex: 1.4; border-radius: 12px; overflow: hidden; background: #1c1e26; border: 1px solid var(--color-panel-border); box-shadow: inset 0 0 40px rgba(0,0,0,0.5);">
+          <!-- React Three Fiber will mount here -->
+        </div>
+
+        <!-- Right Side: Text, Legend, and Controls -->
+        <div class="edu-sidebar" style="flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 32px;">
+          
+          <div class="edu-header">
+            <h1 style="font-size: 3rem; line-height: 1.1; font-weight: 800; letter-spacing: -0.04em;">The <a href="#diagenesis-info" class="clickable-title-word">Diagenesis</a> Engine</h1>
+            <p class="description" style="margin-top: 16px; font-size: 1.1rem; line-height: 1.6; color: var(--color-text-muted);">
+              Simulate the geological transformation of Calcium Carbonate (CaCO<sub>3</sub>) from a chaotic fossil micro-structure into a perfect macrocrystalline gemstone (Calcite).
+            </p>
+          </div>
+
+          <!-- Legend -->
+          <div class="edu-legend" style="background: rgba(255,255,255,0.03); padding: 20px; border-radius: 12px; border: 1px solid var(--color-panel-border);">
+            <h4 style="margin-bottom: 16px; font-weight: 600; font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-text-muted); text-align: left;">Legend</h4>
+            <div style="display: flex; align-items: flex-start; gap: 12px; margin-bottom: 16px;">
+              <div style="width: 16px; height: 16px; border-radius: 50%; background: linear-gradient(135deg, #e0ffff, #8a9ba8); margin-top: 4px; flex-shrink: 0;"></div>
+              <div style="display: flex; flex-direction: column; text-align: left;">
+                <span style="font-size: 0.95rem; font-weight: 600; margin-bottom: 2px;">Calcium Carbonate (CaCO<sub>3</sub>):</span>
+                <span style="font-size: 0.9rem; color: var(--color-text-muted);">Main lattice atoms.</span>
+              </div>
+            </div>
+            <div style="display: flex; align-items: flex-start; gap: 12px;">
+              <div style="width: 16px; height: 16px; border-radius: 50%; background: #ff3366; box-shadow: 0 0 8px rgba(255,51,102,0.6); margin-top: 4px; flex-shrink: 0;"></div>
+              <div style="display: flex; flex-direction: column; text-align: left;">
+                <span style="font-size: 0.95rem; font-weight: 600; margin-bottom: 2px;">Organic Impurities:</span>
+                <span style="font-size: 0.9rem; color: var(--color-text-muted);">Trapped matter that fades during diagenesis.</span>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Toggles -->
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <button id="toggle-math-btn" class="toggle-action-btn active" style="align-self: flex-start;">
+              <span class="toggle-circle"></span> Math Grids
+            </button>
+            <button id="toggle-outline-btn" class="toggle-action-btn" style="align-self: flex-start;">
+              <span class="toggle-circle"></span> Trigonal Shape
+            </button>
+          </div>
+          
+          <!-- Controls -->
+          <div class="controls-wrapper" style="background: rgba(255,255,255,0.03); padding: 20px; border-radius: 12px; border: 1px solid var(--color-panel-border);">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 12px;">
+              <span class="label-text" style="font-weight: var(--fw-bold);">Diagenesis Progress:</span>
+              <span class="label-value" id="progress-value" style="font-family: var(--font-mono); color: var(--color-primary);">0%</span>
+            </div>
+            <input type="range" id="diagenesis-slider" min="0" max="100" value="0" style="width: 100%; cursor: pointer;">
+            
+            <div class="phase-markers" style="display: flex; justify-content: space-between; margin-top: 8px; font-size: 12px; color: var(--color-text-muted);">
+              <span>State A: Biogenic Fossil</span>
+              <span>State B: Gemstone Lattice</span>
+            </div>
+          </div>
+          
+        </div>
+      </section>
+
+      <!-- Diagenesis Explanation Section -->
+      <section id="diagenesis-info" class="panel" style="margin-top: 40px; margin-bottom: 40px; padding: 40px 60px; background: rgba(255,255,255,0.03); border-radius: 12px; border: 1px solid var(--color-panel-border);">
+        <h2 style="font-size: 2.5rem; margin-bottom: 24px; font-weight: 800; letter-spacing: -0.02em;">What is Diagenesis?</h2>
+        <div style="font-size: 1.15rem; line-height: 1.8; color: var(--color-text-muted); display: flex; flex-direction: column; gap: 16px; max-width: 900px;">
+          <p>
+            <strong style="color: var(--color-text);">Diagenesis</strong> is the sum of all physical, chemical, and biological changes that occur to a sediment after its initial deposition, but before metamorphism. It's the engine that turns loose sand into sandstone, and biological shells into solid rock.
+          </p>
+          <p>
+            In the context of fossils—like the marine shells you're studying—diagenesis is the process that allows them to survive for millions of years. When a creature dies, its shell is often made of <em>Aragonite</em> or chaotic biological <em>Calcium Carbonate</em>. Over time, pressure and mineral-rich groundwater force the chaotic atoms to rearrange into a highly ordered, stable crystal lattice.
+          </p>
+          <p>
+            As this process hits 100%, the chaotic micro-structure fully locks into the macroscopic <strong>Trigonal Crystal System</strong> of <em>Calcite</em>. At this stage, the fossil has fundamentally transformed into a gemstone-like state, preserving the ancient creature's shape in solid crystal for eternity.
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const setTheme = (theme) => {
+        document.documentElement.setAttribute("data-theme", theme);
+        localStorage.setItem("theme", theme);
+      };
+      setTheme(localStorage.getItem("theme") || "dark");
+      document.getElementById("theme-toggle").addEventListener("click", () => {
+        setTheme(document.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light");
+      });
+
+      // Model status popover logic
+      const modelStatusBtn = document.getElementById("model-status-btn");
+      const modelStatusPopover = document.getElementById("model-status-popover");
+      const modelStatusPopoverText = document.getElementById("model-status-popover-text");
+
+      modelStatusBtn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        modelStatusPopover.classList.toggle("is-visible");
+      });
+
+      document.addEventListener("click", (event) => {
+        if (!event.target.closest(".model-info-dropdown-container")) {
+          modelStatusPopover.classList.remove("is-visible");
+        }
+      });
+
+      const refreshModelStatus = async () => {
+        try {
+          const response = await fetch("/model-status", { cache: "no-store" });
+          const status = await response.json();
+          modelStatusPopoverText.textContent = status.message;
+          
+          modelStatusPopoverText.className = "status-indicator-value";
+          if (status.state === "ready") {
+            modelStatusPopoverText.classList.add("status-ready");
+          } else if (status.state === "loading" || status.state === "idle") {
+            modelStatusPopoverText.classList.add("status-attempting");
+            if (status.state === "loading") window.setTimeout(refreshModelStatus, 900);
+          } else {
+            modelStatusPopoverText.classList.add("status-error");
+          }
+        } catch {
+          modelStatusPopoverText.textContent = "Unreachable (Network Error)";
+          modelStatusPopoverText.className = "status-indicator-value status-error";
+        }
+      };
+      refreshModelStatus();
+    </script>
+    <script type="text/babel" data-type="module" src="/static/diagenesis.jsx"></script>
+  </body>
+</html>

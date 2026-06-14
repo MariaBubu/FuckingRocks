@@ -14,7 +14,7 @@ const pseudoRandom = (seed) => {
   return x - Math.floor(x);
 };
 
-const DiagenesisSimulation = ({ showOutline }) => {
+const DiagenesisSimulation = ({ showOutline, showMath }) => {
   const meshRef = useRef();
   const impuritiesRef = useRef();
   const materialRef = useRef();
@@ -159,7 +159,7 @@ const DiagenesisSimulation = ({ showOutline }) => {
       <directionalLight position={[10, 10, 5]} intensity={1.5} />
       <Environment preset="city" />
       
-      {!showOutline && (
+      {showMath && (
         <group>
           {/* Thick Mathematical Axes (X=Red, Y=Green, Z=Blue) */}
           <group>
@@ -177,10 +177,10 @@ const DiagenesisSimulation = ({ showOutline }) => {
             </mesh>
           </group>
 
-          {/* 3D Background Grid Room to ground the simulation */}
-          <gridHelper args={[80, 40, '#8a9ba8', '#4a4e69']} position={[0, -12, 0]} />
-          <gridHelper args={[80, 40, '#8a9ba8', '#4a4e69']} position={[0, 0, -15]} rotation={[Math.PI / 2, 0, 0]} />
-          <gridHelper args={[80, 40, '#8a9ba8', '#4a4e69']} position={[-15, 0, 0]} rotation={[0, 0, Math.PI / 2]} />
+          {/* 3D Background Grid Planes centered on origin */}
+          <gridHelper args={[80, 40, '#8a9ba8', '#4a4e69']} position={[0, 0, 0]} />
+          <gridHelper args={[80, 40, '#8a9ba8', '#4a4e69']} position={[0, 0, 0]} rotation={[Math.PI / 2, 0, 0]} />
+          <gridHelper args={[80, 40, '#8a9ba8', '#4a4e69']} position={[0, 0, 0]} rotation={[0, 0, Math.PI / 2]} />
         </group>
       )}
 
@@ -205,39 +205,79 @@ const DiagenesisSimulation = ({ showOutline }) => {
       </instancedMesh>
 
       {/* Impurities (Dirt/Organics) */}
-      {!showOutline && (
-        <instancedMesh ref={impuritiesRef} args={[null, null, IMPURITY_COUNT]}>
-          <dodecahedronGeometry args={[0.2]} />
-          <meshStandardMaterial 
-            ref={impurityMatRef} 
-            color="#ff3366" 
-            emissive="#ff3366"
-            emissiveIntensity={0.6}
-            roughness={0.5} 
-            transparent={true} 
-            opacity={1.0} 
-          />
-        </instancedMesh>
-      )}
+      <instancedMesh ref={impuritiesRef} args={[null, null, IMPURITY_COUNT]} visible={!showOutline}>
+        <dodecahedronGeometry args={[0.2]} />
+        <meshStandardMaterial 
+          ref={impurityMatRef} 
+          color="#ff3366" 
+          emissive="#ff3366"
+          emissiveIntensity={0.6}
+          roughness={0.5} 
+          transparent={true} 
+          opacity={1.0} 
+        />
+      </instancedMesh>
 
       {/* Soft floor shadow */}
       <ContactShadows position={[0, -11.9, 0]} opacity={0.6} scale={40} blur={2} far={15} />
       
       {/* User Interaction */}
-      <OrbitControls makeDefault autoRotate autoRotateSpeed={0.5} />
+      <OrbitControls makeDefault autoRotate autoRotateSpeed={0.5} maxDistance={70} />
     </>
+  );
+};
+
+const DelayedFallback = () => {
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setShow(true), 3000);
+    return () => clearTimeout(timer);
+  }, []);
+  
+  if (!show) return null;
+  return (
+    <Html center>
+      <div style={{ color: 'var(--color-primary)', background: 'var(--color-panel-bg)', padding: '24px 40px', borderRadius: '12px', border: '1px solid var(--color-primary)', fontSize: '1.4rem', fontWeight: 'bold', whiteSpace: 'nowrap', boxShadow: '0 8px 32px rgba(0,0,0,0.5)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
+        <span style={{ fontSize: '2.5rem' }}>⏳</span>
+        <span>Warming up engine... please wait a second</span>
+      </div>
+    </Html>
   );
 };
 
 const App = () => {
   const [showOutline, setShowOutline] = useState(false);
+  const [showMath, setShowMath] = useState(true);
 
   useEffect(() => {
-    const btn = document.getElementById('toggle-outline-btn');
-    if (btn) {
-      const handleClick = () => setShowOutline(prev => !prev);
-      btn.addEventListener('click', handleClick);
-      return () => btn.removeEventListener('click', handleClick);
+    const outlineBtn = document.getElementById('toggle-outline-btn');
+    if (outlineBtn) {
+      const handleOutlineClick = () => {
+        setShowOutline(prev => {
+          const newState = !prev;
+          if (newState) outlineBtn.classList.add('active');
+          else outlineBtn.classList.remove('active');
+          return newState;
+        });
+      };
+      outlineBtn.addEventListener('click', handleOutlineClick);
+      return () => outlineBtn.removeEventListener('click', handleOutlineClick);
+    }
+  }, []);
+
+  useEffect(() => {
+    const mathBtn = document.getElementById('toggle-math-btn');
+    if (mathBtn) {
+      const handleMathClick = () => {
+        setShowMath(prev => {
+          const newState = !prev;
+          if (newState) mathBtn.classList.add('active');
+          else mathBtn.classList.remove('active');
+          return newState;
+        });
+      };
+      mathBtn.addEventListener('click', handleMathClick);
+      return () => mathBtn.removeEventListener('click', handleMathClick);
     }
   }, []);
 
@@ -251,8 +291,8 @@ const App = () => {
         </div>
       )}
       <Canvas camera={{ position: [28, 28, 28], fov: 45 }}>
-        <React.Suspense fallback={null}>
-          <DiagenesisSimulation showOutline={showOutline} />
+        <React.Suspense fallback={<DelayedFallback />}>
+          <DiagenesisSimulation showOutline={showOutline} showMath={showMath} />
         </React.Suspense>
       </Canvas>
     </div>

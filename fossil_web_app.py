@@ -479,6 +479,10 @@ def render_landing_page() -> bytes:
     return render_template("landing.html")
 
 
+def render_diagenesis_page() -> bytes:
+    return render_template("diagenesis.html")
+
+
 def render_edu_page() -> bytes:
     return render_template("edu.html")
 
@@ -612,6 +616,8 @@ class FossilHandler(BaseHTTPRequestHandler):
             self.send_html(render_page())
         elif path == "/edu":
             self.send_html(render_edu_page())
+        elif path == "/diagenesis":
+            self.send_html(render_diagenesis_page())
         elif path == "/model-status":
             self.send_json(model_status())
         elif path.startswith("/static/"):

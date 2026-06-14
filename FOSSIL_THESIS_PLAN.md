@@ -20,6 +20,45 @@ Current situation: the project has about 108 Fujifilm `.RAF` photos in `../Fucki
 
 7. **Keep the project fun on purpose:** turn data collection into fossil hunts, keep a "model got confused by this one" gallery, name experiments clearly, and make weekly visual demos. The thesis will feel much less impossible if it produces visible artifacts every few days.
 
+8. **Brainstorm option: modern minimum-data classifier study:** instead of only presenting the fossil website as a product, frame the thesis around how modern transfer learning, pretrained vision models, simple augmentation, phone-camera data collection, and lightweight tooling change the amount of labelled data needed to make a useful domain-specific classifier. The fossil task would become the concrete case study.
+
+## Brainstorm Option: How Much Data Does A Classifier Need Now?
+
+### Core Idea
+
+The original ML-course intuition is that a reliable classifier needs a very large dataset, often thousands of examples per class. A possible thesis direction is to investigate whether that expectation changes for a narrow real-world task in 2026, where students can use pretrained models, transfer learning, phone cameras, annotation tools, and AI-assisted coding workflows.
+
+### Possible Research Question
+
+How much labelled data is required to obtain a useful fossil classifier for limestone tile images when using modern transfer learning and data augmentation?
+
+Alternative versions:
+
+- How does classifier performance change as the number of labelled fossil examples increases?
+- Can a small, carefully labelled image dataset support a usable domain-specific classifier when combined with pretrained computer vision models?
+- What are the practical minimum data requirements for building a two-class fossil classifier under small-data constraints?
+
+### What The Experiment Could Look Like
+
+Use the fossil dataset as a case study. Keep a fixed test set aside, then train several classifier versions with increasing amounts of training data:
+
+- very small set, for example 5 examples per class
+- small set, for example 10 examples per class
+- medium set, for example 20 examples per class
+- all available labelled training examples
+
+For each training size, compare performance with and without simple augmentation. Report accuracy, confusion matrix, per-class precision/recall if possible, and a small gallery of mistakes.
+
+### Why This Could Be Thesis-Friendly
+
+This turns the project into a clear empirical study rather than only a product demo. Even imperfect results become useful because the thesis can discuss data requirements, overfitting, class ambiguity, lighting, background noise, and the limits of transfer learning.
+
+### Risks
+
+The question must stay narrow. "How have classifier requirements changed in 2026?" is too broad for a bachelor thesis. A safer version is: "For this specific fossil-recognition task, how far can modern small-data methods get, and where do they fail?"
+
+The thesis would also need a proper related-work section on transfer learning, small-data learning, data augmentation, and possibly few-shot learning. The fossil website could still be included as a prototype, but the main scientific contribution would be the controlled data-size experiment.
+
 ## Recommended First 10 Days
 
 Day 1-2: organize the data, convert RAW images, make contact sheets, and decide which photos are usable.
@@ -502,4 +541,3 @@ These are not failures. They define the scope.
 - `rawpy` RAW processing package: https://pypi.org/project/rawpy/
 - LibRaw supported cameras: https://www.libraw.org/supported-cameras
 - scikit-image exposure/CLAHE documentation: https://scikit-image.org/docs/stable/api/skimage.exposure.html
-
